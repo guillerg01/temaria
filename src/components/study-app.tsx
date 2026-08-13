@@ -2537,7 +2537,7 @@ function ExamQuestionCard({
         <VoiceTextarea
           id={`exam-answer-${question.id}`}
           name={`exam-answer-${question.id}`}
-          className="answer-textarea"
+          className="exam-answer-field"
           value={value}
           onValueChange={onChange}
           placeholder={
