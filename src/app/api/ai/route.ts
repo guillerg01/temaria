@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { callAgentRouter, isAgentRouterConfigured } from "@/lib/agentrouter";
+import {
+  AgentRouterEmptyResponseError,
+  callAgentRouter,
+  isAgentRouterConfigured,
+} from "@/lib/agentrouter";
 import { aiRequestSchema } from "@/lib/ai-schema";
 import { retrieveKnowledge } from "@/lib/corpus";
 import { hasSameOrigin } from "@/lib/request-security";
@@ -114,6 +118,113 @@ function normalizeTextAnswer(answer: string): string {
   return formatMarkdown(answer);
 }
 
+function buildLocalFallbackExam(
+  results: Array<{
+    chunk: {
+      id: string;
+      sourceLabel: string;
+      sectionTitle: string;
+      text: string;
+    };
+  }>,
+  options: {
+    questionCount: number;
+    difficulty: "basic" | "intermediate" | "advanced";
+    includeMultipleChoice: boolean;
+    includeShortAnswer: boolean;
+    includeEssay: boolean;
+  },
+) {
+  const enabledTypes = [
+    options.includeMultipleChoice ? "multiple_choice" : null,
+    options.includeShortAnswer ? "short_answer" : null,
+    options.includeEssay ? "essay" : null,
+  ].filter((type): type is "multiple_choice" | "short_answer" | "essay" =>
+    Boolean(type),
+  );
+  const types = enabledTypes.length ? enabledTypes : ["short_answer"];
+  const questions = Array.from({ length: options.questionCount }, (_, index) => {
+    const result = results[index % results.length];
+    const source = result.chunk;
+    const type = types[index % types.length];
+    const sourceIds = [source.id];
+    const excerpt = source.text.replace(/\s+/g, " ").trim().slice(0, 360);
+    const distractors = results
+      .filter((candidate) => candidate.chunk.id !== source.id)
+      .map((candidate) => candidate.chunk.sectionTitle)
+      .filter((title, titleIndex, all) => title && all.indexOf(title) === titleIndex)
+      .slice(0, 3);
+
+    if (type === "multiple_choice") {
+      const answer = source.sectionTitle || source.sourceLabel;
+      return {
+        id: `local-${index + 1}`,
+        type,
+        prompt: `Según ${source.sourceLabel}, ¿qué tema se aborda principalmente?`,
+        options: [answer, ...distractors].slice(0, 4),
+        answer,
+        rationale: `La respuesta se basa en la fuente ${source.id}.`,
+        rubric: [`Identifica correctamente el tema central de ${source.sectionTitle}.`],
+        sourceIds,
+      };
+    }
+
+    return {
+      id: `local-${index + 1}`,
+      type,
+      prompt:
+        type === "essay"
+          ? `Desarrolla una explicación sobre ${source.sectionTitle}, relacionándola con la aplicación profesional descrita en la fuente.`
+          : `Explica brevemente las ideas esenciales de ${source.sectionTitle}.`,
+      options: [],
+      answer: excerpt,
+      rationale: `Respuesta modelo extraída de la fuente ${source.id}.`,
+      rubric: [
+        `Incluye las ideas principales respaldadas por ${source.sectionTitle}.`,
+        "Relaciona la explicación con el contexto profesional cuando proceda.",
+      ],
+      sourceIds,
+    };
+  });
+
+  return {
+    title: `Examen de respaldo local (${options.difficulty})`,
+    instructions:
+      "AgentRouter no devolvió contenido para este examen. Este cuestionario de respaldo se construyó automáticamente con las fuentes locales recuperadas; puedes resolverlo y calificarlo normalmente.",
+    questions,
+  };
+}
+
+function buildLocalGroundedAnswer(
+  mode: StudyMode,
+  results: Array<{
+    chunk: {
+      sectionTitle: string;
+      sourceLabel: string;
+      text: string;
+    };
+  }>,
+) {
+  const items = results.slice(0, 5).map(({ chunk }, index) => {
+    const excerpt = chunk.text.replace(/\s+/g, " ").trim().slice(0, 260);
+    return `- **${chunk.sectionTitle}** [F${index + 1}]: ${excerpt}`;
+  });
+  const heading =
+    mode === "summary"
+      ? "Resumen local de respaldo"
+      : mode === "solve" || mode === "grade"
+        ? "Evidencia local recuperada"
+        : "Respuesta local de respaldo";
+
+  return `### ${heading}
+
+AgentRouter no devolvió contenido después de dos intentos. Mientras se diagnostica el proveedor, estas son las ideas más relevantes encontradas en el material seleccionado:
+
+${items.join("\n")}
+
+Puedes reformular la pregunta con un concepto concreto para afinar la recuperación.`;
+}
+
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   const requestStartedAt = Date.now();
@@ -152,7 +263,7 @@ export async function POST(request: Request) {
 
   const body = parsed.data;
   console.info(
-    JSON.stringify({
+    `[TEMARIA_AI] ${JSON.stringify({
       scope: "ai_route",
       event: "request_validated",
       timestamp: new Date().toISOString(),
@@ -164,7 +275,7 @@ export async function POST(request: Request) {
       historyMessages: body.history.length,
       promptCharacters: body.prompt.length,
       examOptions: body.examOptions ?? null,
-    }),
+    })}`,
   );
   const retrievalQuery = `${buildQuery(body.mode, body.prompt)} ${body.retrievalTerms.join(" ")}`;
   const results = retrieveKnowledge({
@@ -205,7 +316,7 @@ export async function POST(request: Request) {
     score: Math.round(score * 10) / 10,
   }));
   console.info(
-    JSON.stringify({
+    `[TEMARIA_AI] ${JSON.stringify({
       scope: "ai_route",
       event: "retrieval_completed",
       timestamp: new Date().toISOString(),
@@ -221,7 +332,7 @@ export async function POST(request: Request) {
       topScores: results
         .slice(0, 5)
         .map(({ score }) => Math.round(score * 10) / 10),
-    }),
+    })}`,
   );
 
   if (!isAgentRouterConfigured()) {
@@ -465,7 +576,7 @@ ${modelContext}`;
     });
 
     console.info(
-      JSON.stringify({
+      `[TEMARIA_AI] ${JSON.stringify({
         scope: "ai_route",
         event: "generation_completed",
         timestamp: new Date().toISOString(),
@@ -473,7 +584,7 @@ ${modelContext}`;
         mode: body.mode,
         durationMs: Date.now() - requestStartedAt,
         answerCharacters: answer.length,
-      }),
+      })}`,
     );
 
     if (body.mode === "exam") {
@@ -504,8 +615,62 @@ ${modelContext}`;
       (error.name === "TimeoutError" ||
         error.name === "AbortError" ||
         message.toLowerCase().includes("timeout"));
+    const emptyAgentResponse = error instanceof AgentRouterEmptyResponseError;
+    if (body.mode === "exam" && emptyAgentResponse) {
+      const fallbackOptions = body.examOptions ?? {
+        questionCount: 8,
+        difficulty: "intermediate" as const,
+        includeMultipleChoice: true,
+        includeShortAnswer: true,
+        includeEssay: true,
+      };
+      const exam = buildLocalFallbackExam(results, fallbackOptions);
+      console.warn(
+        `[TEMARIA_AI] ${JSON.stringify({
+          scope: "ai_route",
+          event: "exam_local_fallback",
+          timestamp: new Date().toISOString(),
+          requestId,
+          durationMs: Date.now() - requestStartedAt,
+          questionCount: exam.questions.length,
+          sourceCount: sources.length,
+          reason: "agentrouter_empty_output",
+        })}`,
+      );
+      return NextResponse.json({
+        exam,
+        sources,
+        grounded: true,
+        fallback: true,
+        requestId,
+      });
+    }
+    if (emptyAgentResponse) {
+      const answer = buildLocalGroundedAnswer(body.mode, results);
+      console.warn(
+        `[TEMARIA_AI] ${JSON.stringify({
+          scope: "ai_route",
+          event: "text_local_fallback",
+          timestamp: new Date().toISOString(),
+          requestId,
+          mode: body.mode,
+          durationMs: Date.now() - requestStartedAt,
+          answerCharacters: answer.length,
+          sourceCount: sources.length,
+          reason: "agentrouter_empty_output",
+          responseSummary: error.responseSummary,
+        })}`,
+      );
+      return NextResponse.json({
+        answer,
+        sources,
+        grounded: true,
+        fallback: true,
+        requestId,
+      });
+    }
     console.error(
-      JSON.stringify({
+      `[TEMARIA_AI] ${JSON.stringify({
         scope: "ai_route",
         event: "request_failed",
         timestamp: new Date().toISOString(),
@@ -515,7 +680,7 @@ ${modelContext}`;
         errorName: error instanceof Error ? error.name : "UnknownError",
         errorMessage: message,
         timedOut,
-      }),
+      })}`,
     );
     return NextResponse.json(
       {
@@ -524,6 +689,7 @@ ${modelContext}`;
           : `No se pudo consultar AgentRouter: ${message}`,
         sources,
         retryable: timedOut,
+        requestId,
       },
       { status: timedOut ? 504 : 502 },
     );

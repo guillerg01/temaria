@@ -34,18 +34,28 @@ type AgentRouterTrace = {
   requestedQuestions?: number;
 };
 
+export class AgentRouterEmptyResponseError extends Error {
+  readonly responseSummary: ReturnType<typeof responseShape>;
+
+  constructor(responseSummary: ReturnType<typeof responseShape>) {
+    super("AgentRouter devolvio una respuesta sin contenido utilizable.");
+    this.name = "AgentRouterEmptyResponseError";
+    this.responseSummary = responseSummary;
+  }
+}
+
 function logAgentRouter(
   level: "info" | "warn" | "error",
   event: string,
   details: Record<string, unknown>,
 ) {
   console[level](
-    JSON.stringify({
-      scope: "agentrouter",
-      event,
-      timestamp: new Date().toISOString(),
-      ...details,
-    }),
+    `[TEMARIA_AI] ${JSON.stringify({
+        scope: "agentrouter",
+        event,
+        timestamp: new Date().toISOString(),
+        ...details,
+      })}`,
   );
 }
 
@@ -113,35 +123,51 @@ export async function callAgentRouter(options: {
   const baseUrl = (
     process.env.AGENTROUTER_BASE_URL ?? "https://agentrouter.org/v1"
   ).replace(/\/$/, "");
+  const baseHost = new URL(baseUrl).host;
   const model = process.env.AGENTROUTER_MODEL ?? "gpt-5.6-sol";
   const headers = {
     Authorization: `Bearer ${process.env.AGENTROUTER_API_KEY}`,
     "Content-Type": "application/json",
     "User-Agent": process.env.AGENTROUTER_USER_AGENT ?? "codex_cli_rs/0.114.0",
   };
-  const requestBody = (structured: boolean) => ({
+  const compactInstructions = `${options.instructions.slice(0, 2_500)}\n\nFUENTES REDUCIDAS PARA REINTENTO:\n${options.instructions.slice(-8_000)}`;
+  const requestBody = (structured: boolean, compact: boolean) => ({
     model,
     instructions: structured
       ? options.instructions
-      : `${options.instructions}\nDevuelve solo JSON valido, sin Markdown ni texto adicional.`,
-    input: options.input,
+      : `${compact ? compactInstructions : options.instructions}\nDevuelve solo JSON valido, sin Markdown ni texto adicional.`,
+    input: compact ? options.input.slice(-2) : options.input,
     reasoning: { effort: structured ? "medium" : "low" },
-    max_output_tokens: structured ? 8_000 : 4_000,
+    max_output_tokens: structured ? 8_000 : compact ? 2_500 : 4_000,
     store: false,
     ...(structured && options.textFormat
       ? { text: { format: options.textFormat } }
       : {}),
   });
 
-  async function request(structured: boolean, attempt: number) {
+  async function request(
+    structured: boolean,
+    attempt: number,
+    compact = false,
+  ) {
     const startedAt = Date.now();
-    const body = requestBody(structured);
+    let phase = "preparing_request";
+    let httpStatus: number | undefined;
+    let upstreamRequestId: string | null = null;
+    const body = requestBody(structured, compact);
     const serializedBody = JSON.stringify(body);
     logAgentRouter("info", "request_started", {
       ...options.trace,
       attempt,
       structured,
+      compact,
       model,
+      baseHost,
+      environment: process.env.NODE_ENV,
+      renderService: process.env.RENDER_SERVICE_NAME ?? null,
+      renderRegion: process.env.RENDER_REGION ?? null,
+      renderInstance: process.env.RENDER_INSTANCE_ID ?? null,
+      renderCommit: process.env.RENDER_GIT_COMMIT ?? null,
       requestBytes: Buffer.byteLength(serializedBody, "utf8"),
       instructionCharacters: body.instructions.length,
       inputMessages: body.input.length,
@@ -154,6 +180,7 @@ export async function callAgentRouter(options: {
     });
 
     try {
+      phase = "waiting_for_headers";
       const response = await fetch(`${baseUrl}/responses`, {
         method: "POST",
         headers,
@@ -161,7 +188,26 @@ export async function callAgentRouter(options: {
         signal: AbortSignal.timeout(100_000),
         cache: "no-store",
       });
+      httpStatus = response.status;
+      upstreamRequestId =
+        response.headers.get("x-request-id") ??
+        response.headers.get("request-id") ??
+        response.headers.get("cf-ray");
+      logAgentRouter("info", "response_headers_received", {
+        ...options.trace,
+        attempt,
+        structured,
+        compact,
+        httpStatus,
+        durationMs: Date.now() - startedAt,
+        upstreamRequestId,
+        contentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+        server: response.headers.get("server"),
+      });
+      phase = "reading_response_body";
       const rawPayload = await response.text();
+      phase = "parsing_response_body";
       let payload: AgentRouterResponse = {};
       try {
         payload = JSON.parse(rawPayload) as AgentRouterResponse;
@@ -176,6 +222,7 @@ export async function callAgentRouter(options: {
         });
       }
       const text = readOutputText(payload);
+      phase = "validating_response";
       logAgentRouter(
         response.ok && text ? "info" : "warn",
         "response_received",
@@ -202,9 +249,16 @@ export async function callAgentRouter(options: {
         attempt,
         structured,
         durationMs: Date.now() - startedAt,
+        phase,
+        httpStatus,
+        upstreamRequestId,
         errorName: error instanceof Error ? error.name : "UnknownError",
         errorMessage:
           error instanceof Error ? error.message : "Error desconocido.",
+        errorCause:
+          error instanceof Error && error.cause
+            ? String(error.cause)
+            : null,
       });
       throw error;
     }
@@ -216,21 +270,21 @@ export async function callAgentRouter(options: {
     hasTextFormat: Boolean(options.textFormat),
   });
   let result = await request(Boolean(options.textFormat), 1);
-  if (!result.text && options.textFormat) {
+  if (!result.text) {
     logAgentRouter("warn", "structured_output_empty_retrying", {
       ...options.trace,
+      firstAttemptStructured: Boolean(options.textFormat),
       firstResponse: responseShape(result.payload),
     });
-    result = await request(false, 2);
+    result = await request(false, 2, true);
   }
   if (!result.text) {
+    const finalResponse = responseShape(result.payload);
     logAgentRouter("error", "call_empty", {
       ...options.trace,
-      finalResponse: responseShape(result.payload),
+      finalResponse,
     });
-    throw new Error(
-      `AgentRouter devolvio una respuesta sin contenido utilizable (${JSON.stringify(responseShape(result.payload))}).`,
-    );
+    throw new AgentRouterEmptyResponseError(finalResponse);
   }
   logAgentRouter("info", "call_completed", {
     ...options.trace,

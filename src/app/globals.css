@@ -4382,6 +4382,12 @@ select option {
     gap: 16px;
   }
 
+  .tutor-view .workspace-header {
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
   .teaching-visual {
     margin-top: 16px;
     padding: 15px;
@@ -4639,16 +4645,31 @@ select option {
 }
 .tutor-view .workspace-header {
   flex: 0 0 auto;
+  min-height: 0;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.tutor-view .workspace-header .eyebrow {
+  margin-bottom: 3px;
+}
+.tutor-view .workspace-header h1 {
+  font-size: 20px;
+  line-height: 1.18;
+}
+.tutor-view .workspace-header p {
+  margin-top: 5px;
+  line-height: 1.4;
 }
 .tutor-layout .chat-panel {
   height: 100%;
 }
 .tutor-trust-strip {
-  min-height: 52px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px 8px 13px;
+  padding: 5px 6px 5px 11px;
   color: var(--teal);
   background: var(--teal-pale);
   border: 1px solid color-mix(in srgb, var(--teal) 30%, var(--line));
@@ -4672,7 +4693,7 @@ select option {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin-left: 8px;
+  margin-left: 4px;
   padding: 0 11px;
   color: var(--muted);
   background: var(--paper);
