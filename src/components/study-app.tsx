@@ -45,6 +45,7 @@ import { useRouter } from "next/navigation";
 import { extractStudyHeadings, MarkdownView } from "@/components/markdown-view";
 import { StructuredGradingFeedback } from "@/components/grading-feedback";
 import { TeachingExplanationCard } from "@/components/teaching-explanation";
+import { VoiceTextarea } from "@/components/voice-textarea";
 import {
   clearStudyData,
   readPreference,
@@ -732,14 +733,14 @@ export function StudyApp({
             <Dialog.Description>
               Estas notas se guardan únicamente en este navegador.
             </Dialog.Description>
-            <textarea
+            <VoiceTextarea
               id="topic-notes"
               name="topic-notes"
               className="note-textarea"
               value={activeDocument ? (notes[activeDocument.id] ?? "") : ""}
-              onChange={(event) =>
+              onValueChange={(nextValue) =>
                 activeDocument &&
-                setNotes({ ...notes, [activeDocument.id]: event.target.value })
+                setNotes({ ...notes, [activeDocument.id]: nextValue })
               }
               placeholder="Escribe recordatorios, dudas o relaciones importantes..."
             />
@@ -1561,11 +1562,11 @@ function TutorView({
                 </ToolButton>
               </div>
             )}
-            <textarea
+            <VoiceTextarea
               id="tutor-prompt"
               name="tutor-prompt"
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+              onValueChange={setPrompt}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -2518,12 +2519,12 @@ function ExamQuestionCard({
           ))}
         </div>
       ) : (
-        <textarea
+        <VoiceTextarea
           id={`exam-answer-${question.id}`}
           name={`exam-answer-${question.id}`}
           className="answer-textarea"
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onValueChange={onChange}
           placeholder={
             question.type === "essay"
               ? "Desarrolla tu respuesta y justifica tus decisiones..."

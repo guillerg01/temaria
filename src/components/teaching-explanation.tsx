@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import { MarkdownView } from "@/components/markdown-view";
 import { TeachingVisualView } from "@/components/teaching-visual";
+import { VoiceTextarea } from "@/components/voice-textarea";
 import { appendPreference } from "@/lib/client-db";
 import type {
   ExplanationReview,
@@ -184,11 +185,11 @@ export function TeachingExplanationCard({
               <>
                 <label className="review-field">
                   ¿Qué parte consideras incorrecta o incompleta?
-                  <textarea
+                  <VoiceTextarea
                     id={`review-${explanation.title}`}
                     name="explanation-objection"
                     value={objection}
-                    onChange={(event) => setObjection(event.target.value)}
+                    onValueChange={setObjection}
                     placeholder="Por ejemplo: creo que este concepto se confunde con... porque en la unidad se indica..."
                   />
                 </label>
