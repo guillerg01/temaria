@@ -255,8 +255,26 @@ export async function POST(request: Request) {
     await request.json().catch(() => null),
   );
   if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+
+    console.warn(
+      `[TEMARIA_AI] ${JSON.stringify({
+        scope: "ai_route",
+        event: "request_invalid",
+        timestamp: new Date().toISOString(),
+        path: firstIssue?.path.join("."),
+        code: firstIssue?.code,
+        message: firstIssue?.message,
+      })}`,
+    );
+
     return NextResponse.json(
-      { error: "La solicitud no es válida.", details: parsed.error.flatten() },
+      {
+        error: firstIssue?.path.length
+          ? `No se pudo procesar el campo ${firstIssue.path.join(".")}.`
+          : "La solicitud no es válida.",
+        details: parsed.error.flatten(),
+      },
       { status: 400 },
     );
   }

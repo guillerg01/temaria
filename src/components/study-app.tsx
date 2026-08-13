@@ -2166,7 +2166,9 @@ function ExamView({
           courseIds: globalScope === "all" ? [] : [globalScope],
           documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
           chunkIds: [...new Set(exam.questions.flatMap((question) => question.sourceIds))].slice(0, 40),
-          retrievalTerms: exam.questions.map((question) => question.prompt).slice(0, 16),
+          retrievalTerms: exam.questions
+            .map((question) => question.prompt.slice(0, 500))
+            .slice(0, 16),
           history: [],
         }),
       });

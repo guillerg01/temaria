@@ -19,7 +19,7 @@ export const aiRequestSchema = z.object({
   chunkIds: z.array(z.string().max(300)).max(40).default([]),
   excludeDocumentIds: z.array(z.string().max(300)).max(30).default([]),
   retrievalTerms: z
-    .array(z.string().trim().min(2).max(160))
+    .array(z.string().trim().min(2).max(500))
     .max(16)
     .default([]),
   history: z
