@@ -114,6 +114,15 @@ function responseShape(payload: AgentRouterResponse) {
 
 function htmlResponseDiagnostic(rawPayload: string) {
   const lower = rawPayload.toLowerCase();
+  const sanitizePreview = (value: string) =>
+    value
+      .replace(/(authorization|token|api[-_]?key|cookie|set-cookie)\s*[:=][^\s<;]+/gi, "$1=[REDACTED]")
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[EMAIL_REDACTED]")
+      .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL_REDACTED]")
+      .replace(/[A-Za-z0-9_-]{32,}/g, "[LONG_TOKEN_REDACTED]")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 600);
   const title = rawPayload.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
     ?.replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
@@ -121,6 +130,8 @@ function htmlResponseDiagnostic(rawPayload: string) {
     .slice(0, 160);
   return {
     sha256: createHash("sha256").update(rawPayload).digest("hex"),
+    previewStart: sanitizePreview(rawPayload),
+    previewEnd: sanitizePreview(rawPayload.slice(-600)),
     title: title || null,
     markers: {
       cloudflare: lower.includes("cloudflare") || lower.includes("cf-ray"),
