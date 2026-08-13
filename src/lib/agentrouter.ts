@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 type AgentRouterResponse = {
   id?: string;
   model?: string;
@@ -110,6 +112,35 @@ function responseShape(payload: AgentRouterResponse) {
   };
 }
 
+function htmlResponseDiagnostic(rawPayload: string) {
+  const lower = rawPayload.toLowerCase();
+  const title = rawPayload.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+    ?.replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  return {
+    sha256: createHash("sha256").update(rawPayload).digest("hex"),
+    title: title || null,
+    markers: {
+      cloudflare: lower.includes("cloudflare") || lower.includes("cf-ray"),
+      challenge:
+        lower.includes("challenge-platform") ||
+        lower.includes("checking your browser") ||
+        lower.includes("just a moment"),
+      captcha:
+        lower.includes("captcha") || lower.includes("turnstile"),
+      unauthorized:
+        lower.includes("unauthorized") || lower.includes("not authorized"),
+      accessDenied:
+        lower.includes("access denied") || lower.includes("forbidden"),
+      agentRouter: lower.includes("agentrouter"),
+      render: lower.includes("render.com"),
+      vercel: lower.includes("vercel"),
+    },
+  };
+}
+
 export function isAgentRouterConfigured() {
   return Boolean(process.env.AGENTROUTER_API_KEY);
 }
@@ -204,6 +235,9 @@ export async function callAgentRouter(options: {
         contentType: response.headers.get("content-type"),
         contentLength: response.headers.get("content-length"),
         server: response.headers.get("server"),
+        responseUrl: response.url,
+        redirected: response.redirected,
+        redirectCount: response.redirected ? 1 : 0,
       });
       phase = "reading_response_body";
       const rawPayload = await response.text();
@@ -219,6 +253,13 @@ export async function callAgentRouter(options: {
           httpStatus: response.status,
           durationMs: Date.now() - startedAt,
           responseBytes: Buffer.byteLength(rawPayload, "utf8"),
+          contentType: response.headers.get("content-type"),
+          responseUrl: response.url,
+          redirected: response.redirected,
+          html:
+            response.headers.get("content-type")?.includes("text/html")
+              ? htmlResponseDiagnostic(rawPayload)
+              : null,
         });
       }
       const text = readOutputText(payload);
