@@ -63,6 +63,59 @@ import type {
 import { cn, stableId } from "@/lib/utils";
 
 type CatalogDocument = Omit<CourseDocument, "markdown">;
+type GradingQuestionFeedback = {
+  numero?: number;
+  nota?: number;
+  maximo?: number;
+  valoracion?: string;
+  aciertos?: string[];
+  omisiones?: string[];
+  errores_conceptuales?: string[];
+  errores_redaccion?: string[];
+  respuesta_modelo?: string;
+};
+type StructuredGrading = {
+  nota_global?: number;
+  criterio_global?: string;
+  valoracion_global?: {
+    aciertos?: string[];
+    omisiones?: string[];
+    errores_conceptuales?: string[];
+    errores_redaccion?: string[];
+    retroalimentacion_concreta?: string[];
+  };
+  preguntas?: GradingQuestionFeedback[];
+};
+
+function parseStructuredGrading(value: string): StructuredGrading | null {
+  const clean = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(clean) as StructuredGrading;
+    return parsed && typeof parsed === "object" &&
+      (typeof parsed.nota_global === "number" || Array.isArray(parsed.preguntas))
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function FeedbackList({ title, items }: { title: string; items?: string[] }) {
+  if (!items?.length) return null;
+  return <section className="grading-feedback-section"><h4>{title}</h4><ul>{items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}</ul></section>;
+}
+
+function GradingFeedback({ value }: { value: string }) {
+  const feedback = parseStructuredGrading(value);
+  if (!feedback) return <MarkdownView>{value}</MarkdownView>;
+  const global = feedback.valoracion_global;
+  return <div className="grading-feedback">
+    <header className="grading-feedback-summary"><div><span>Calificación global</span><strong>{feedback.nota_global ?? "—"}<small>/10</small></strong></div><p>{feedback.criterio_global}</p></header>
+    <div className="grading-feedback-grid"><FeedbackList title="Aciertos" items={global?.aciertos} /><FeedbackList title="Aspectos por completar" items={global?.omisiones} /><FeedbackList title="Errores conceptuales" items={global?.errores_conceptuales} /><FeedbackList title="Redacción y claridad" items={global?.errores_redaccion} /></div>
+    <FeedbackList title="Cómo mejorar" items={global?.retroalimentacion_concreta} />
+    {feedback.preguntas?.length ? <div className="grading-question-feedback"><h3>Revisión por pregunta</h3>{feedback.preguntas.map((question, index) => <details key={`grading-question-${question.numero ?? index}`}><summary><span>Pregunta {question.numero ?? index + 1}</span><strong>{question.nota ?? "—"}/{question.maximo ?? "—"}</strong></summary><div className="grading-question-content">{question.valoracion && <p>{question.valoracion}</p>}<FeedbackList title="Aciertos" items={question.aciertos} /><FeedbackList title="Omisiones" items={question.omisiones} /><FeedbackList title="Errores conceptuales" items={question.errores_conceptuales} /><FeedbackList title="Redacción" items={question.errores_redaccion} />{question.respuesta_modelo && <section className="grading-model-answer"><h4>Respuesta modelo</h4><p>{question.respuesta_modelo}</p></section>}</div></details>)}</div> : null}
+  </div>;
+}
 type CatalogCourse = Omit<Course, "documents"> & {
   documents: CatalogDocument[];
 };
@@ -2102,12 +2155,13 @@ function ExamView({
       if (!response.ok) throw new Error(data.error);
       setGrading(data.answer);
       setSources(data.sources ?? sources);
+      const structuredGrading = parseStructuredGrading(String(data.answer));
       const scoreMatch = String(data.answer).match(
         /(?:nota|calificaciÃ³n)(?:\s+global)?[^0-9]{0,20}(10|[0-9](?:[.,][0-9]+)?)/i,
       );
-      const score = scoreMatch
+      const score = structuredGrading?.nota_global ?? (scoreMatch
         ? Number(scoreMatch[1].replace(",", "."))
-        : undefined;
+        : undefined);
       const gradedAt = new Date().toISOString();
       setExamHistory((current) =>
         current.map((item) =>
@@ -2368,7 +2422,7 @@ function ExamView({
                 {grading && (
                   <div className="grading-result">
                     <span className="eyebrow">Retroalimentación</span>
-                    <MarkdownView>{grading}</MarkdownView>
+                    <GradingFeedback value={grading} />
                   </div>
                 )}
                 {sources.length > 0 && (
