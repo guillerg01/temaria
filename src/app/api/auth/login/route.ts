@@ -7,6 +7,7 @@ import {
   sessionCookieName,
   sessionCookieOptions,
 } from "@/lib/auth";
+import { hasSameOrigin } from "@/lib/request-security";
 
 export const runtime = "nodejs";
 
@@ -20,13 +21,8 @@ function clientKey(request: Request) {
   );
 }
 
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  return !origin || origin === new URL(request.url).origin;
-}
-
 export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
+  if (!hasSameOrigin(request)) {
     return NextResponse.json(
       { error: "Origen no permitido." },
       { status: 403 },

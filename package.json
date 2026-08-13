@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "generate:corpus": "node scripts/generate-corpus.mjs",
+    "encrypt:data": "node scripts/encrypt-private-data.mjs",
     "predev": "npm run generate:corpus",
     "dev": "next dev",
     "prebuild": "npm run generate:corpus",

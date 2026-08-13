@@ -26,6 +26,8 @@ services:
       - key: AGENTROUTER_USER_AGENT
         value: codex_cli_rs/0.114.0
       - key: TEMARIA_CORPUS_PATH
-        value: /etc/secrets/corpus.json
+        value: /opt/render/project/src/private-data/corpus.enc
       - key: TEMARIA_ASSESSMENTS_PATH
-        value: /etc/secrets/official-assessments.json
+        value: /opt/render/project/src/private-data/official-assessments.enc
+      - key: TEMARIA_DATA_KEY
+        sync: false

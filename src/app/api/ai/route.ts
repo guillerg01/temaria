@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { callAgentRouter, isAgentRouterConfigured } from "@/lib/agentrouter";
 import { aiRequestSchema } from "@/lib/ai-schema";
 import { retrieveKnowledge } from "@/lib/corpus";
+import { hasSameOrigin } from "@/lib/request-security";
 import type { StudyMode } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -19,11 +20,6 @@ function clientKey(request: Request) {
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local"
   );
-}
-
-function sameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  return !origin || origin === new URL(request.url).origin;
 }
 
 function rateLimit(request: Request) {
@@ -73,7 +69,7 @@ function buildQuery(mode: StudyMode, prompt: string) {
 }
 
 export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
+  if (!hasSameOrigin(request)) {
     return NextResponse.json(
       { error: "Origen no permitido." },
       { status: 403 },

@@ -1,8 +1,8 @@
 import "server-only";
 
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { readPrivateJson } from "@/lib/private-json";
 import type { Corpus, CourseDocument, KnowledgeChunk } from "@/lib/types";
 
 const emptyCorpus: Corpus = {
@@ -15,14 +15,14 @@ const emptyCorpus: Corpus = {
 function loadCorpus(): Corpus {
   const candidates = [
     process.env.TEMARIA_CORPUS_PATH,
+    path.join(process.cwd(), "private-data", "corpus.enc"),
     path.join(process.cwd(), "src", "data", "corpus.json"),
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
     try {
-      if (existsSync(candidate)) {
-        return JSON.parse(readFileSync(candidate, "utf8")) as Corpus;
-      }
+      const loaded = readPrivateJson<Corpus>(candidate);
+      if (loaded) return loaded;
     } catch (error) {
       console.error(`No se pudo cargar el corpus desde ${candidate}.`, error);
     }

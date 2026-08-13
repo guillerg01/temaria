@@ -142,9 +142,9 @@ El proyecto produce una salida `standalone`. La configuración recomendada está
 
 1. Crea un Blueprint desde este repositorio y aplica `render.yaml`.
 2. Configura `SITE_PASSWORD` y `AGENTROUTER_API_KEY` en el panel; `AUTH_SECRET` se genera automáticamente.
-3. Añade dos **Secret Files** sin incluirlos en Git:
-   - `/etc/secrets/corpus.json` con el corpus generado localmente;
-   - `/etc/secrets/official-assessments.json` con las evaluaciones recuperadas.
-4. Despliega y comprueba `/api/health`. Debe indicar autenticación, IA, corpus y evaluaciones configuradas.
+3. Genera una clave aleatoria de 32 bytes, guárdala como `TEMARIA_DATA_KEY` y ejecuta `npm run encrypt:data`.
+4. El repositorio contiene únicamente `private-data/*.enc`, cifrados con AES-256-GCM. El material original continúa ignorado por Git.
+5. Configura la misma `TEMARIA_DATA_KEY` en Render. La aplicación valida y descifra los archivos únicamente en memoria.
+6. Despliega y comprueba `/api/health`. Debe indicar autenticación, IA, corpus y evaluaciones configuradas.
 
 La llamada a AgentRouter se corta de forma controlada antes del límite de la petición y devuelve un error reintentable sin perder el progreso local. El plan gratuito de Render puede suspender el servicio por inactividad, por lo que la primera carga puede tardar; un plan de pago elimina ese arranque en frío. Si en el futuro una generación necesita varios minutos, debe convertirse en un trabajo asíncrono persistente con estado y reintentos, no en una petición HTTP indefinida.
