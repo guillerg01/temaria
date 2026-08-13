@@ -179,7 +179,7 @@ export async function callAgentRouter(options: {
   // Mobile browsers and the Render -> ngrok -> local gateway chain can close a
   // request that stays silent for too long. Exams have a deterministic local
   // fallback, so stop upstream early enough for the API route to return it.
-  const upstreamTimeoutMs = options.trace.mode === "exam" ? 50_000 : 100_000;
+  const upstreamTimeoutMs = options.trace.mode === "exam" ? 35_000 : 100_000;
   const structuredMaxTokens =
     options.trace.mode === "exam"
       ? Math.min(6_000, Math.max(2_500, (options.trace.requestedQuestions ?? 3) * 900))
