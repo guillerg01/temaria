@@ -1,9 +1,40 @@
 import "server-only";
 
-import corpusData from "@/data/corpus.json";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
 import type { Corpus, CourseDocument, KnowledgeChunk } from "@/lib/types";
 
-const corpus = corpusData as Corpus;
+const emptyCorpus: Corpus = {
+  version: "empty",
+  stats: { courses: 0, documents: 0, chunks: 0, words: 0 },
+  courses: [],
+  chunks: [],
+};
+
+function loadCorpus(): Corpus {
+  const candidates = [
+    process.env.TEMARIA_CORPUS_PATH,
+    path.join(process.cwd(), "src", "data", "corpus.json"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) {
+        return JSON.parse(readFileSync(candidate, "utf8")) as Corpus;
+      }
+    } catch (error) {
+      console.error(`No se pudo cargar el corpus desde ${candidate}.`, error);
+    }
+  }
+
+  console.warn(
+    "Temaria se inició sin corpus privado. Configura TEMARIA_CORPUS_PATH para habilitar la biblioteca.",
+  );
+  return emptyCorpus;
+}
+
+const corpus = loadCorpus();
 const documentMap = new Map<string, CourseDocument>();
 const chunkTermFrequency = new Map<string, number>();
 

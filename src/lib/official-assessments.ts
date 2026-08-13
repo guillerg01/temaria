@@ -21,9 +21,11 @@ function readAssessmentFile(filePath: string): OfficialAssessment[] {
 function loadOfficialAssessments() {
   const dataRoot = path.join(process.cwd(), "src", "data");
   const files: string[] = [];
+  const privateFile = process.env.TEMARIA_ASSESSMENTS_PATH;
   const mainFile = path.join(dataRoot, "official-assessments.json");
   const assessmentDirectory = path.join(dataRoot, "official-assessments");
 
+  if (privateFile && existsSync(privateFile)) files.push(privateFile);
   if (existsSync(mainFile)) files.push(mainFile);
   if (existsSync(assessmentDirectory)) {
     files.push(

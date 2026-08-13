@@ -10,6 +10,7 @@ const publicPaths = new Set([
   "/",
   "/login",
   "/api/auth/login",
+  "/api/health",
   "/manifest.webmanifest",
   "/sw.js",
   "/icon.svg",

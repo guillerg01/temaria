@@ -48,7 +48,9 @@ export async function callAgentRouter(options: {
       store: false,
       ...(options.textFormat ? { text: { format: options.textFormat } } : {}),
     }),
-    signal: AbortSignal.timeout(90_000),
+    // Finish before the route's serverless deadline, leaving enough time to
+    // parse the provider response and return a useful 504 to the browser.
+    signal: AbortSignal.timeout(100_000),
     cache: "no-store",
   });
 

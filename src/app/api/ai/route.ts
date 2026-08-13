@@ -6,6 +6,9 @@ import { retrieveKnowledge } from "@/lib/corpus";
 import type { StudyMode } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Keep the platform window above the upstream timeout so we can return a
+// controlled response instead of letting the serverless invocation be killed.
+export const maxDuration = 120;
 
 const requests = new Map<string, { count: number; resetAt: number }>();
 const requestWindowMs = 10 * 60 * 1000;
@@ -393,9 +396,20 @@ ${context}`;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error desconocido.";
+    const timedOut =
+      error instanceof Error &&
+      (error.name === "TimeoutError" ||
+        error.name === "AbortError" ||
+        message.toLowerCase().includes("timeout"));
     return NextResponse.json(
-      { error: `No se pudo consultar AgentRouter: ${message}`, sources },
-      { status: 502 },
+      {
+        error: timedOut
+          ? "La IA tardó demasiado en responder. Inténtalo de nuevo; tu progreso no se ha perdido."
+          : `No se pudo consultar AgentRouter: ${message}`,
+        sources,
+        retryable: timedOut,
+      },
+      { status: timedOut ? 504 : 502 },
     );
   }
 }

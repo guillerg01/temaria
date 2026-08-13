@@ -136,4 +136,15 @@ Antes de desplegar:
 - prueba AgentRouter desde el entorno final;
 - usa HTTPS y secretos distintos a desarrollo.
 
-El proyecto produce una salida `standalone`. Vercel es adecuado si las respuestas caben dentro del límite de duración de sus funciones; para respuestas largas, un servidor Node persistente o streaming reduce el riesgo de timeout.
+El proyecto produce una salida `standalone`. La configuración recomendada está en `render.yaml` y ejecuta Temaria como un servicio Node persistente en Render.
+
+### Despliegue recomendado en Render
+
+1. Crea un Blueprint desde este repositorio y aplica `render.yaml`.
+2. Configura `SITE_PASSWORD` y `AGENTROUTER_API_KEY` en el panel; `AUTH_SECRET` se genera automáticamente.
+3. Añade dos **Secret Files** sin incluirlos en Git:
+   - `/etc/secrets/corpus.json` con el corpus generado localmente;
+   - `/etc/secrets/official-assessments.json` con las evaluaciones recuperadas.
+4. Despliega y comprueba `/api/health`. Debe indicar autenticación, IA, corpus y evaluaciones configuradas.
+
+La llamada a AgentRouter se corta de forma controlada antes del límite de la petición y devuelve un error reintentable sin perder el progreso local. El plan gratuito de Render puede suspender el servicio por inactividad, por lo que la primera carga puede tardar; un plan de pago elimina ese arranque en frío. Si en el futuro una generación necesita varios minutos, debe convertirse en un trabajo asíncrono persistente con estado y reintentos, no en una petición HTTP indefinida.
