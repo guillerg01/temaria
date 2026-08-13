@@ -1,0 +1,32 @@
+# Dependencies and generated output
+node_modules/
+.next/
+out/
+build/
+coverage/
+
+# Environment and secrets
+.env*
+!.env.example
+*.pem
+
+# Private course material and extracted data
+course-content/
+*_bundle.json
+00-CREDENCIALES.md
+src/data/corpus.json
+src/data/official-assessments.json
+src/data/official-assessments/
+
+# Local logs and tooling
+.dev-server*.log
+.vercel/
+.pnp.*
+.yarn/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
