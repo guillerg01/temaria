@@ -2440,7 +2440,7 @@ function ExamView({
                 {grading && (
                   <div className="grading-result">
                     <span className="eyebrow">Retroalimentación</span>
-                    <StructuredGradingFeedback value={grading} />
+                    <StructuredGradingFeedback value={grading} exam={exam} />
                   </div>
                 )}
                 {sources.length > 0 && (

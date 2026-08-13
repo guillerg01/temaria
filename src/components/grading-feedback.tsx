@@ -1,6 +1,7 @@
 "use client";
 
 import { MarkdownView } from "@/components/markdown-view";
+import type { GeneratedExam } from "@/lib/types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -13,7 +14,16 @@ function numberValue(record: UnknownRecord, keys: string[]) {
   return undefined;
 }
 function listValue(record: UnknownRecord, keys: string[]) {
-  for (const key of keys) if (Array.isArray(record[key])) return (record[key] as unknown[]).filter((item): item is string => typeof item === "string");
+  for (const key of keys) if (Array.isArray(record[key])) {
+    const seen = new Set<string>();
+    return (record[key] as unknown[]).filter((item): item is string => {
+      if (typeof item !== "string") return false;
+      const normalized = item.toLocaleLowerCase("es").replace(/[^a-záéíóúüñ0-9]+/g, " ").trim();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }
   return [];
 }
 function parseGrading(value: string): UnknownRecord | null {
@@ -34,7 +44,7 @@ function FeedbackList({ title, items }: { title: string; items: string[] }) {
   return <section className="grading-feedback-section"><h4>{title}</h4><ul>{items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}</ul></section>;
 }
 
-export function StructuredGradingFeedback({ value }: { value: string }) {
+export function StructuredGradingFeedback({ value, exam }: { value: string; exam?: GeneratedExam }) {
   const feedback = parseGrading(value);
   if (!feedback) return <MarkdownView>{value}</MarkdownView>;
   const global = (feedback.valoracion_global && typeof feedback.valoracion_global === "object" ? feedback.valoracion_global : {}) as UnknownRecord;
@@ -49,12 +59,12 @@ export function StructuredGradingFeedback({ value }: { value: string }) {
       <FeedbackList title="Errores conceptuales" items={listValue(global, ["errores_conceptuales"])} />
       <FeedbackList title="Redacción y claridad" items={listValue(global, ["errores_redaccion", "redaccion"])} />
     </div>
-    <FeedbackList title="Elementos que debes tener en cuenta" items={listValue(global, ["retroalimentacion_concreta", "elementos_a_tener_en_cuenta", "recomendaciones"])} />
+    <FeedbackList title="Consejos para aprender más rápido" items={listValue(global, ["retroalimentacion_concreta", "elementos_a_tener_en_cuenta", "recomendaciones"]).slice(0, 3)} />
     {questions.length > 0 && <div className="grading-question-feedback"><h3>Revisión por pregunta</h3>{questions.map((question, index) => {
       const questionScore = numberValue(question, ["nota", "nota_obtenida", "puntuacion"]);
       const maximum = numberValue(question, ["maximo", "puntuacion_maxima", "maxima"]);
       const explanation = stringValue(question, ["valoracion", "comentario", "justificacion", "por_que_esa_nota"]);
-      const modelAnswer = stringValue(question, ["respuesta_modelo", "respuesta_mejorada", "ejemplo_respuesta"]);
+      const modelAnswer = stringValue(question, ["respuesta_modelo", "respuesta_mejorada", "ejemplo_respuesta"]) || exam?.questions[index]?.answer || "";
       return <details key={`grading-question-${index}`} open><summary><span>Pregunta {numberValue(question, ["numero"]) ?? index + 1}</span><strong>{questionScore ?? "—"}/{maximum ?? "—"}</strong></summary><div className="grading-question-content">
         {explanation && <section className="grading-score-reason"><h4>Por qué obtuviste esa nota</h4><p>{explanation}</p></section>}
         <FeedbackList title="Lo que hiciste bien" items={listValue(question, ["aciertos", "fortalezas"])} />
