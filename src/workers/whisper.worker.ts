@@ -2,6 +2,10 @@ import { env, pipeline } from "@huggingface/transformers";
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.numThreads = 1;
+  env.backends.onnx.wasm.proxy = false;
+}
 
 type TranscriptionOutput =
   | { text: string }
@@ -23,6 +27,8 @@ function getTranscriber() {
       "automatic-speech-recognition",
       "Xenova/whisper-tiny",
       {
+        device: "wasm",
+        dtype: "q8",
         progress_callback: (item: { status?: string; progress?: number }) => {
           if (item.status === "progress" && typeof item.progress === "number") {
             sendStatus("Descargando modelo…", item.progress);
