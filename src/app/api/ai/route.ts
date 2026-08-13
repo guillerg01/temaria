@@ -158,6 +158,8 @@ export async function POST(request: Request) {
         `[FUENTE ${index + 1} | ${chunk.id}]\n${chunk.sourceLabel}\n${chunk.text}`,
     )
     .join("\n\n---\n\n");
+  const modelContext =
+    body.mode === "exam" ? context.slice(0, 24_000) : context;
   const examDetail = body.examOptions
     ? `\nPreferencias de examen: ${body.examOptions.questionCount} preguntas, dificultad ${body.examOptions.difficulty}; opción múltiple=${body.examOptions.includeMultipleChoice}; respuesta corta=${body.examOptions.includeShortAnswer}; desarrollo=${body.examOptions.includeEssay}.`
     : "";
@@ -180,7 +182,7 @@ Para cualquier visualización:
 Al revisar una objeción, no des la razón a ninguna parte por autoridad. Basa el veredicto en evidencia recuperada y reconoce la incertidumbre cuando corresponda.
 
 FUENTES RECUPERADAS:
-${context}`;
+${modelContext}`;
 
   try {
     const examSchema = {

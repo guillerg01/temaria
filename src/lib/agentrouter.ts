@@ -77,8 +77,8 @@ export async function callAgentRouter(options: {
       ? options.instructions
       : `${options.instructions}\nDevuelve solo JSON válido, sin Markdown ni texto adicional.`,
     input: options.input,
-    reasoning: { effort: "medium" },
-    max_output_tokens: 8_000,
+    reasoning: { effort: structured ? "medium" : "low" },
+    max_output_tokens: structured ? 8_000 : 4_000,
     store: false,
     ...(structured && options.textFormat
       ? { text: { format: options.textFormat } }
