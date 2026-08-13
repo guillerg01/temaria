@@ -18,6 +18,7 @@ import { MarkdownView } from "@/components/markdown-view";
 import { TeachingVisualView } from "@/components/teaching-visual";
 import { VoiceTextarea } from "@/components/voice-textarea";
 import { appendPreference } from "@/lib/client-db";
+import { readJsonResponse } from "@/lib/http-response";
 import type {
   ExplanationReview,
   ExplanationReviewResult,
@@ -81,7 +82,7 @@ export function TeachingExplanationCard({
           history: [],
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok || !data.review) {
         throw new Error(data.error ?? "No se pudo revisar la explicación.");
       }

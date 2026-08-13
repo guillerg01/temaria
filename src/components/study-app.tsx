@@ -51,6 +51,7 @@ import {
   readPreference,
   writePreference,
 } from "@/lib/client-db";
+import { readJsonResponse } from "@/lib/http-response";
 import type {
   ChatMessage,
   Course,
@@ -1410,7 +1411,7 @@ function TutorView({
             .map(({ role, content }) => ({ role, content })),
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
         if (data.sources?.length) {
           setMessages((current) => [
@@ -1434,7 +1435,7 @@ function TutorView({
           id: stableId("assistant"),
           role: "assistant",
           prompt: userMessage.content,
-          content: explanation?.simple ?? data.answer,
+          content: explanation?.simple ?? data.answer ?? "No se recibió una respuesta.",
           explanation,
           sources: data.sources as SourceReference[],
           createdAt: new Date().toISOString(),
@@ -1741,7 +1742,7 @@ function OfficialAssessmentsView({
           history: [],
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error ?? "No se pudo explicar.");
       if (!data.explanation) {
         throw new Error(data.answer ?? "No se devolvió una explicación estructurada.");
@@ -2106,13 +2107,14 @@ function ExamView({
           },
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error);
       if (!data.exam)
         throw new Error(
           data.answer ?? "El proveedor no devolvió un examen estructurado.",
         );
       const generatedExam = data.exam as GeneratedExam;
+      const generatedSources = (data.sources ?? []) as SourceReference[];
       const timestamp = new Date().toISOString();
       const savedExam: SavedExam = {
         id: stableId("exam"),
@@ -2121,7 +2123,7 @@ function ExamView({
         difficulty: difficulty as SavedExam["difficulty"],
         requestedQuestionCount: count,
         answers: {},
-        sources: data.sources ?? [],
+        sources: generatedSources,
         grading: "",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -2130,7 +2132,7 @@ function ExamView({
       setActiveExamId(savedExam.id);
       setExam(generatedExam);
       setAnswers({});
-      setSources(data.sources ?? []);
+      setSources(generatedSources);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -2172,12 +2174,14 @@ function ExamView({
           history: [],
         }),
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error);
-      setGrading(data.answer);
+      const gradingAnswer = data.answer ?? "";
+      if (!gradingAnswer) throw new Error("La IA no devolvió una calificación completa.");
+      setGrading(gradingAnswer);
       setSources(sources);
-      const structuredGrading = parseStructuredGrading(String(data.answer));
-      const scoreMatch = String(data.answer).match(
+      const structuredGrading = parseStructuredGrading(gradingAnswer);
+      const scoreMatch = gradingAnswer.match(
         /(?:nota|calificaciÃ³n)(?:\s+global)?[^0-9]{0,20}(10|[0-9](?:[.,][0-9]+)?)/i,
       );
       const score = structuredGrading?.nota_global ?? (scoreMatch
@@ -2190,7 +2194,7 @@ function ExamView({
             ? {
                 ...item,
                 answers,
-                grading: data.answer,
+                grading: gradingAnswer,
                 sources,
                 score,
                 gradedAt,

@@ -296,7 +296,7 @@ export async function POST(request: Request) {
     })}`,
   );
   const retrievalQuery = `${buildQuery(body.mode, body.prompt)} ${body.retrievalTerms.join(" ")}`;
-  const results = retrieveKnowledge({
+  let results = retrieveKnowledge({
     query: retrievalQuery,
     courseIds: body.courseIds,
     documentIds: body.documentIds,
@@ -320,7 +320,39 @@ export async function POST(request: Request) {
     includeAllCandidates: body.mode === "exam",
   });
 
+  if (!results.length && body.mode === "grade" && body.chunkIds.length) {
+    console.warn(
+      `[TEMARIA_AI] ${JSON.stringify({
+        scope: "ai_route",
+        event: "grade_chunk_ids_not_found",
+        timestamp: new Date().toISOString(),
+        requestId,
+        chunkCount: body.chunkIds.length,
+        documentCount: body.documentIds.length,
+      })}`,
+    );
+    results = retrieveKnowledge({
+      query: retrievalQuery,
+      courseIds: body.courseIds,
+      documentIds: body.documentIds,
+      anchorTerms: body.retrievalTerms,
+      limit: 14,
+    });
+  }
+
   if (!results.length) {
+    if (body.mode === "grade") {
+      return NextResponse.json(
+        {
+          error:
+            "No pude localizar el material original de este examen. Tus respuestas siguen guardadas; genera un examen nuevo o inténtalo otra vez.",
+          sources: [],
+          grounded: false,
+          requestId,
+        },
+        { status: 422 },
+      );
+    }
     return NextResponse.json({
       answer:
         "No encontré evidencia suficiente en el material seleccionado. Amplía el alcance o formula la pregunta con otros términos.",
@@ -720,6 +752,18 @@ ${modelContext}`;
         fallback: true,
         requestId,
       });
+    }
+    if (emptyAgentResponse && body.mode === "grade") {
+      return NextResponse.json(
+        {
+          error:
+            "La IA no devolvió una calificación completa. Inténtalo de nuevo; tus respuestas siguen guardadas.",
+          sources,
+          retryable: true,
+          requestId,
+        },
+        { status: 502 },
+      );
     }
     if (emptyAgentResponse) {
       const answer = buildLocalGroundedAnswer(body.mode, results);

@@ -171,6 +171,9 @@ export async function callAgentRouter(options: {
     Authorization: `Bearer ${process.env.AGENTROUTER_API_KEY}`,
     "Content-Type": "application/json",
     "User-Agent": process.env.AGENTROUTER_USER_AGENT ?? "codex_cli_rs/0.114.0",
+    ...(baseHost.endsWith("ngrok-free.app")
+      ? { "ngrok-skip-browser-warning": "temaria-server" }
+      : {}),
   };
   const compactInstructions = `${options.instructions.slice(0, 2_500)}\n\nFUENTES REDUCIDAS PARA REINTENTO:\n${options.instructions.slice(-8_000)}`;
   const requestBody = (structured: boolean, compact: boolean) => ({
