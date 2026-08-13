@@ -176,14 +176,28 @@ export async function callAgentRouter(options: {
       : {}),
   };
   const compactInstructions = `${options.instructions.slice(0, 2_500)}\n\nFUENTES REDUCIDAS PARA REINTENTO:\n${options.instructions.slice(-8_000)}`;
+  // Mobile browsers and the Render -> ngrok -> local gateway chain can close a
+  // request that stays silent for too long. Exams have a deterministic local
+  // fallback, so stop upstream early enough for the API route to return it.
+  const upstreamTimeoutMs = options.trace.mode === "exam" ? 50_000 : 100_000;
+  const structuredMaxTokens =
+    options.trace.mode === "exam"
+      ? Math.min(6_000, Math.max(2_500, (options.trace.requestedQuestions ?? 3) * 900))
+      : 8_000;
   const requestBody = (structured: boolean, compact: boolean) => ({
     model,
     instructions: structured
       ? options.instructions
       : `${compact ? compactInstructions : options.instructions}\nDevuelve solo JSON valido, sin Markdown ni texto adicional.`,
     input: compact ? options.input.slice(-2) : options.input,
-    reasoning: { effort: structured ? "medium" : "low" },
-    max_output_tokens: structured ? 8_000 : compact ? 2_500 : 4_000,
+    reasoning: {
+      effort: structured && options.trace.mode !== "exam" ? "medium" : "low",
+    },
+    max_output_tokens: structured
+      ? structuredMaxTokens
+      : compact
+        ? 2_500
+        : 4_000,
     store: false,
     ...(structured && options.textFormat
       ? { text: { format: options.textFormat } }
@@ -222,6 +236,7 @@ export async function callAgentRouter(options: {
       ),
       maxOutputTokens: body.max_output_tokens,
       reasoningEffort: body.reasoning.effort,
+      timeoutMs: upstreamTimeoutMs,
     });
 
     try {
@@ -230,7 +245,7 @@ export async function callAgentRouter(options: {
         method: "POST",
         headers,
         body: serializedBody,
-        signal: AbortSignal.timeout(100_000),
+        signal: AbortSignal.timeout(upstreamTimeoutMs),
         cache: "no-store",
       });
       httpStatus = response.status;

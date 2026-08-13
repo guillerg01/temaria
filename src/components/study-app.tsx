@@ -2112,12 +2112,9 @@ function ExamView({
         });
       } catch (error) {
         if (!isRetryableNetworkError(error)) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        response = await fetch("/api/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        });
+        throw new Error(
+          "La conexión se interrumpió mientras se generaba el examen. Inténtalo nuevamente; no se perdió ningún examen ni respuesta guardada.",
+        );
       }
       const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error);
