@@ -19,7 +19,11 @@ const publicPaths = new Set([
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (publicPaths.has(pathname) || pathname.startsWith("/icons/")) {
+  if (
+    publicPaths.has(pathname) ||
+    pathname.startsWith("/icons/") ||
+    pathname.startsWith("/onnxruntime/")
+  ) {
     return NextResponse.next();
   }
 
