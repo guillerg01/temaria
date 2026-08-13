@@ -68,7 +68,55 @@ function buildQuery(mode: StudyMode, prompt: string) {
   return `${prompt} ${expansion[mode]}`;
 }
 
+function normalizeTextAnswer(answer: string): string {
+  const trimmed = answer.trim();
+  const formatMarkdown = (value: string) =>
+    value
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .split("\n")
+      .map((line) =>
+        line
+          .replace(/^\s*[•·▪◦]\s+/, "- ")
+          .replace(/^\s*(\d+)\)\s+/, "$1. "),
+      )
+      .join("\n")
+      .trim();
+
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    return formatMarkdown(answer);
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    for (const key of [
+      "message",
+      "respuesta",
+      "response",
+      "answer",
+      "content",
+      "text",
+    ]) {
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) return formatMarkdown(value);
+    }
+    for (const key of ["data", "result"]) {
+      if (parsed[key] && typeof parsed[key] === "object") {
+        const nested: string = normalizeTextAnswer(JSON.stringify(parsed[key]));
+        if (nested.trim()) return nested;
+      }
+    }
+  } catch {
+    // Preserve ordinary text that only resembles JSON.
+  }
+
+  return formatMarkdown(answer);
+}
+
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
+  const requestStartedAt = Date.now();
   if (!hasSameOrigin(request)) {
     return NextResponse.json(
       { error: "Origen no permitido." },
@@ -103,6 +151,21 @@ export async function POST(request: Request) {
   }
 
   const body = parsed.data;
+  console.info(
+    JSON.stringify({
+      scope: "ai_route",
+      event: "request_validated",
+      timestamp: new Date().toISOString(),
+      requestId,
+      mode: body.mode,
+      courseCount: body.courseIds.length,
+      documentCount: body.documentIds.length,
+      retrievalTermCount: body.retrievalTerms.length,
+      historyMessages: body.history.length,
+      promptCharacters: body.prompt.length,
+      examOptions: body.examOptions ?? null,
+    }),
+  );
   const retrievalQuery = `${buildQuery(body.mode, body.prompt)} ${body.retrievalTerms.join(" ")}`;
   const results = retrieveKnowledge({
     query: retrievalQuery,
@@ -141,6 +204,25 @@ export async function POST(request: Request) {
     excerpt: chunk.text.slice(0, 320),
     score: Math.round(score * 10) / 10,
   }));
+  console.info(
+    JSON.stringify({
+      scope: "ai_route",
+      event: "retrieval_completed",
+      timestamp: new Date().toISOString(),
+      requestId,
+      mode: body.mode,
+      durationMs: Date.now() - requestStartedAt,
+      resultCount: results.length,
+      sourceCourses: [...new Set(results.map(({ chunk }) => chunk.courseId))],
+      sourceCharacters: results.reduce(
+        (total, { chunk }) => total + chunk.text.length,
+        0,
+      ),
+      topScores: results
+        .slice(0, 5)
+        .map(({ score }) => Math.round(score * 10) / 10),
+    }),
+  );
 
   if (!isAgentRouterConfigured()) {
     return NextResponse.json({
@@ -373,7 +455,26 @@ ${modelContext}`;
         { role: "user", content: body.prompt },
       ],
       textFormat,
+      trace: {
+        requestId,
+        mode: body.mode,
+        sourceCount: sources.length,
+        contextCharacters: modelContext.length,
+        requestedQuestions: body.examOptions?.questionCount,
+      },
     });
+
+    console.info(
+      JSON.stringify({
+        scope: "ai_route",
+        event: "generation_completed",
+        timestamp: new Date().toISOString(),
+        requestId,
+        mode: body.mode,
+        durationMs: Date.now() - requestStartedAt,
+        answerCharacters: answer.length,
+      }),
+    );
 
     if (body.mode === "exam") {
       const exam = JSON.parse(answer);
@@ -390,7 +491,11 @@ ${modelContext}`;
       return NextResponse.json({ review, sources, grounded: true });
     }
 
-    return NextResponse.json({ answer, sources, grounded: true });
+    return NextResponse.json({
+      answer: normalizeTextAnswer(answer),
+      sources,
+      grounded: true,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error desconocido.";
@@ -399,6 +504,19 @@ ${modelContext}`;
       (error.name === "TimeoutError" ||
         error.name === "AbortError" ||
         message.toLowerCase().includes("timeout"));
+    console.error(
+      JSON.stringify({
+        scope: "ai_route",
+        event: "request_failed",
+        timestamp: new Date().toISOString(),
+        requestId,
+        mode: body.mode,
+        durationMs: Date.now() - requestStartedAt,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: message,
+        timedOut,
+      }),
+    );
     return NextResponse.json(
       {
         error: timedOut
