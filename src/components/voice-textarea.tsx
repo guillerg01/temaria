@@ -15,6 +15,28 @@ type WhisperWorkerMessage =
   | { type: "result"; text: string }
   | { type: "error"; message: string };
 
+let sharedWorker: Worker | null = null;
+let activeWorkerListener: ((message: WhisperWorkerMessage) => void) | null = null;
+
+function getSharedWhisperWorker() {
+  if (!sharedWorker) {
+    sharedWorker = new Worker(
+      new URL("../workers/whisper.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    sharedWorker.onmessage = (event: MessageEvent<WhisperWorkerMessage>) => {
+      activeWorkerListener?.(event.data);
+    };
+  }
+  return sharedWorker;
+}
+
+function resetSharedWhisperWorker() {
+  sharedWorker?.terminate();
+  sharedWorker = null;
+  activeWorkerListener = null;
+}
+
 async function decodeTo16Khz(blob: Blob) {
   const context = new AudioContext();
   try {
@@ -48,7 +70,6 @@ export function VoiceTextarea({
   const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
-  const workerRef = useRef<Worker | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -58,20 +79,12 @@ export function VoiceTextarea({
     return () => {
       recorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
-      workerRef.current?.terminate();
     };
   }, []);
 
   function getWorker() {
-    if (!workerRef.current) {
-      workerRef.current = new Worker(
-        new URL("../workers/whisper.worker.ts", import.meta.url),
-        { type: "module" },
-      );
-      workerRef.current.onmessage = (
-        event: MessageEvent<WhisperWorkerMessage>,
-      ) => {
-        const data = event.data;
+    const worker = getSharedWhisperWorker();
+    activeWorkerListener = (data) => {
         if (data.type === "status") {
           setMessage(data.message);
           setProgress(data.progress ?? null);
@@ -92,13 +105,13 @@ export function VoiceTextarea({
         onValueChange(`${base}${base ? " " : ""}${text}`);
         setMessage("Texto añadido.");
       };
-      workerRef.current.onerror = () => {
+      worker.onerror = () => {
         setTranscribing(false);
         setProgress(null);
+        resetSharedWhisperWorker();
         setMessage("No se pudo cargar Whisper en este navegador.");
       };
-    }
-    return workerRef.current;
+    return worker;
   }
 
   async function transcribe(blob: Blob) {
@@ -107,6 +120,17 @@ export function VoiceTextarea({
     try {
       const audio = await decodeTo16Khz(blob);
       getWorker().postMessage({ type: "transcribe", audio }, [audio.buffer]);
+      window.setTimeout(() => {
+        setTranscribing((stillTranscribing) => {
+          if (!stillTranscribing) return false;
+          resetSharedWhisperWorker();
+          setProgress(null);
+          setMessage(
+            "Whisper tardó demasiado en iniciarse. Pulsa Dictar para reintentarlo; el modelo descargado seguirá guardado.",
+          );
+          return false;
+        });
+      }, 180_000);
     } catch {
       setTranscribing(false);
       setMessage("No se pudo procesar la grabación. Prueba otra vez.");

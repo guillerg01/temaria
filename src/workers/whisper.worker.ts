@@ -26,12 +26,17 @@ function getTranscriber() {
         progress_callback: (item: { status?: string; progress?: number }) => {
           if (item.status === "progress" && typeof item.progress === "number") {
             sendStatus("Descargando modelo…", item.progress);
+          } else if (item.status === "done") {
+            sendStatus("Descarga completa. Inicializando Whisper...");
           } else if (item.status === "ready") {
             sendStatus("Modelo preparado. Transcribiendo…");
           }
         },
       },
-    ) as unknown as Promise<Transcriber>;
+    ).then((transcriber) => {
+      sendStatus("Whisper preparado. Transcribiendo...");
+      return transcriber as unknown as Transcriber;
+    });
   }
   return transcriberPromise;
 }

@@ -725,7 +725,7 @@ ${modelContext}`;
         error.name === "AbortError" ||
         message.toLowerCase().includes("timeout"));
     const emptyAgentResponse = error instanceof AgentRouterEmptyResponseError;
-    if (body.mode === "exam" && (emptyAgentResponse || timedOut)) {
+    if (body.mode === "exam") {
       const fallbackOptions = body.examOptions ?? {
         questionCount: 8,
         difficulty: "intermediate" as const,
@@ -745,7 +745,9 @@ ${modelContext}`;
           sourceCount: sources.length,
           reason: emptyAgentResponse
             ? "agentrouter_empty_output"
-            : "agentrouter_timeout_before_mobile_disconnect",
+            : timedOut
+              ? "agentrouter_timeout_before_mobile_disconnect"
+              : "agentrouter_transport_error",
         })}`,
       );
       return NextResponse.json({
