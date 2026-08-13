@@ -147,4 +147,6 @@ El proyecto produce una salida `standalone`. La configuración recomendada está
 5. Configura la misma `TEMARIA_DATA_KEY` en Render. La aplicación valida y descifra los archivos únicamente en memoria.
 6. Despliega y comprueba `/api/health`. Debe indicar autenticación, IA, corpus y evaluaciones configuradas.
 
+El build usa `npm ci --include=dev` porque Tailwind y PostCSS son dependencias de compilación aunque el servicio se ejecute con `NODE_ENV=production`.
+
 La llamada a AgentRouter se corta de forma controlada antes del límite de la petición y devuelve un error reintentable sin perder el progreso local. El plan gratuito de Render puede suspender el servicio por inactividad, por lo que la primera carga puede tardar; un plan de pago elimina ese arranque en frío. Si en el futuro una generación necesita varios minutos, debe convertirse en un trabajo asíncrono persistente con estado y reintentos, no en una petición HTTP indefinida.
