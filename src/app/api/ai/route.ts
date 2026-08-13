@@ -50,7 +50,7 @@ const modeInstructions: Record<StudyMode, string> = {
     "Resuelve las preguntas aportadas. Para cada respuesta explica por qué es correcta y, cuando proceda, por qué las alternativas son incorrectas.",
   exam: "Genera un examen variado y exigente. Devuelve primero las preguntas y después una sección separada de soluciones, razonamientos y criterios de corrección. Incluye identificadores de fuente en cada solución.",
   grade:
-    "Califica la respuesta del estudiante con una nota de 0 a 10. Desglosa aciertos, omisiones, errores, retroalimentación concreta y una respuesta modelo basada solo en el material.",
+    "Califica la comprensión y el razonamiento del estudiante con una nota de 0 a 10. Las faltas leves de ortografía, tildes, puntuación o redacción NO reducen la nota ni deben aparecer como errores: interpreta el sentido de la respuesta. Solo menciona y penaliza la expresión cuando sea tan confusa o contradictoria que impida entender qué quiso decir. Desglosa aciertos, omisiones, errores conceptuales, retroalimentación concreta y una respuesta modelo basada solo en el material.",
   review:
     "Contrasta de forma neutral la objeción del estudiante con la explicación original y las fuentes. Decide si el estudiante tiene razón, si la explicación está respaldada o si la evidencia recuperada es insuficiente. Corrige la explicación cuando corresponda.",
 };
@@ -418,6 +418,7 @@ Si las fuentes no permiten responder una parte, indícalo brevemente una sola ve
 Todas las afirmaciones sustantivas deben llevar citas inline con el formato [F1], [F2], etc.
 No inventes referencias. Conserva un tono docente, preciso y práctico.
 ${modeInstructions[body.mode]}${examDetail}
+${body.mode === "grade" ? "Al valorar errores_redaccion, déjalo vacío salvo que la respuesta sea realmente incomprensible; nunca penalices errores ortográficos leves ni exijas coincidencia literal con la respuesta esperada. Prioriza si la idea es correcta, equivalente y aplicable." : ""}
 ${body.mode === "exam" ? "Para preguntas de desarrollo: presenta un caso concreto con situación, cambio observable, necesidad afectada, profesionales implicados y registros esperados. Pide solo actuaciones relacionadas con esos datos y escribe una respuesta modelo completa, directamente como contestación del estudiante, no como lista de criterios." : ""}
 
 Para cualquier visualización:

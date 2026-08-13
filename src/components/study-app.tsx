@@ -51,7 +51,7 @@ import {
   readPreference,
   writePreference,
 } from "@/lib/client-db";
-import { readJsonResponse } from "@/lib/http-response";
+import { isRetryableNetworkError, readJsonResponse } from "@/lib/http-response";
 import type {
   ChatMessage,
   Course,
@@ -2088,25 +2088,37 @@ function ExamView({
       const excludeDocumentIds = [...new Set(
         recentExams.flatMap((item) => item.sources.map((source) => source.documentId)),
       )].slice(0, 30);
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "exam",
-          prompt: `Genera un examen equilibrado sobre el alcance seleccionado. Incluye preguntas de aplicación y no solo memorización. Distribuye las preguntas entre cursos, unidades y documentos diferentes. No concentres el examen en un único procedimiento. Evita repetir estos enunciados de los tres exámenes más recientes:\n${recentTopics.length ? recentTopics.map((topic) => `- ${topic}`).join("\n") : "- No hay exámenes recientes."}\nEn sourceIds usa exclusivamente identificadores exactos de las fuentes recibidas.`,
-          courseIds: globalScope === "all" ? [] : [globalScope],
-          documentIds: [],
-          excludeDocumentIds,
-          history: [],
-          examOptions: {
-            questionCount: count,
-            difficulty,
-            includeMultipleChoice: true,
-            includeShortAnswer: true,
-            includeEssay: true,
-          },
-        }),
-      });
+      const requestBody = {
+        mode: "exam",
+        prompt: `Genera un examen equilibrado sobre el alcance seleccionado. Incluye preguntas de aplicación y no solo memorización. Distribuye las preguntas entre cursos, unidades y documentos diferentes. No concentres el examen en un único procedimiento. Evita repetir estos enunciados de los tres exámenes más recientes:\n${recentTopics.length ? recentTopics.map((topic) => `- ${topic}`).join("\n") : "- No hay exámenes recientes."}\nEn sourceIds usa exclusivamente identificadores exactos de las fuentes recibidas.`,
+        courseIds: globalScope === "all" ? [] : [globalScope],
+        documentIds: [],
+        excludeDocumentIds,
+        history: [],
+        examOptions: {
+          questionCount: count,
+          difficulty,
+          includeMultipleChoice: true,
+          includeShortAnswer: true,
+          includeEssay: true,
+        },
+      };
+      let response: Response;
+      try {
+        response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+      } catch (error) {
+        if (!isRetryableNetworkError(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        response = await fetch("/api/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+      }
       const data = await readJsonResponse(response);
       if (!response.ok) throw new Error(data.error);
       if (!data.exam)
@@ -2164,7 +2176,7 @@ function ExamView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "grade",
-          prompt: `Evalúa este examen completo con nota global de 0 a 10. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones. No contradigas expectedAnswer. Si falta respaldo documental, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
+          prompt: `Evalúa este examen completo con nota global de 0 a 10. Valora comprensión, razonamiento y aplicación, no ortografía. Las faltas leves de tildes, puntuación o redacción no restan puntos y no deben listarse. Solo penaliza la expresión si resulta tan confusa que impide entender la idea. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones o errores conceptuales. Acepta respuestas equivalentes aunque no coincidan literalmente con expectedAnswer. No contradigas expectedAnswer. Si falta respaldo documental, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
           courseIds: globalScope === "all" ? [] : [globalScope],
           documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
           chunkIds: [...new Set(exam.questions.flatMap((question) => question.sourceIds))].slice(0, 40),

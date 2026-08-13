@@ -35,3 +35,9 @@ export async function readJsonResponse<
     );
   }
 }
+
+export function isRetryableNetworkError(error: unknown) {
+  if (!(error instanceof TypeError)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("failed to fetch") || message.includes("load failed");
+}
