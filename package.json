@@ -5,6 +5,7 @@
   "scripts": {
     "generate:corpus": "node scripts/generate-corpus.mjs",
     "encrypt:data": "node scripts/encrypt-private-data.mjs",
+    "gateway:ai": "node --env-file=.env --env-file-if-exists=.env.gateway scripts/agentrouter-local-gateway.mjs",
     "predev": "npm run generate:corpus",
     "dev": "next dev",
     "prebuild": "npm run generate:corpus",

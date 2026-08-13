@@ -9,6 +9,7 @@ coverage/
 .env*
 !.env.example
 *.pem
+.env.gateway
 
 # Private course material and extracted data
 course-content/
