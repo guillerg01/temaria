@@ -368,6 +368,7 @@ Si las fuentes no permiten responder una parte, indícalo brevemente una sola ve
 Todas las afirmaciones sustantivas deben llevar citas inline con el formato [F1], [F2], etc.
 No inventes referencias. Conserva un tono docente, preciso y práctico.
 ${modeInstructions[body.mode]}${examDetail}
+${body.mode === "exam" ? "Para preguntas de desarrollo: presenta un caso concreto con situación, cambio observable, necesidad afectada, profesionales implicados y registros esperados. Pide solo actuaciones relacionadas con esos datos y escribe una respuesta modelo completa, directamente como contestación del estudiante, no como lista de criterios." : ""}
 
 Para cualquier visualización:
 - Usa únicamente relaciones o cantidades explícitamente respaldadas por las fuentes.
@@ -417,9 +418,9 @@ ${modelContext}`;
                   type: "string",
                   enum: ["multiple_choice", "short_answer", "essay"],
                 },
-                prompt: { type: "string" },
+                prompt: { type: "string", minLength: 40 },
                 options: { type: "array", items: { type: "string" } },
-                answer: { type: "string" },
+                answer: { type: "string", minLength: 20 },
                 rationale: { type: "string" },
                 rubric: { type: "array", items: { type: "string" } },
                 sourceIds: { type: "array", items: { type: "string" } },
