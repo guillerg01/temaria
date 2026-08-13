@@ -1,4 +1,4 @@
-const STATIC_CACHE = "temaria-static-v1";
+const STATIC_CACHE = "temaria-static-v2";
 const STATIC_ASSETS = [
   "/icon.svg",
   "/apple-icon.png",
@@ -19,6 +19,10 @@ self.addEventListener("activate", (event) => {
     ),
   );
   self.clients.claim();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

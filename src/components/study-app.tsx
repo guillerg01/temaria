@@ -89,15 +89,20 @@ type StructuredGrading = {
 
 function parseStructuredGrading(value: string): StructuredGrading | null {
   const clean = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  try {
-    const parsed = JSON.parse(clean) as StructuredGrading;
-    return parsed && typeof parsed === "object" &&
-      (typeof parsed.nota_global === "number" || Array.isArray(parsed.preguntas))
-      ? parsed
-      : null;
-  } catch {
-    return null;
+  const candidates = [clean];
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start >= 0 && end > start) candidates.push(clean.slice(start, end + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as StructuredGrading;
+      if (parsed && typeof parsed === "object" &&
+        (typeof parsed.nota_global === "number" || Array.isArray(parsed.preguntas))) return parsed;
+    } catch {
+      // Try the next candidate when the provider wrapped JSON in prose.
+    }
   }
+  return null;
 }
 
 function FeedbackList({ title, items }: { title: string; items?: string[] }) {
