@@ -66,38 +66,50 @@ export async function callAgentRouter(options: {
   const baseUrl = (
     process.env.AGENTROUTER_BASE_URL ?? "https://agentrouter.org/v1"
   ).replace(/\/$/, "");
-  const response = await fetch(`${baseUrl}/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.AGENTROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "User-Agent": process.env.AGENTROUTER_USER_AGENT ?? "codex_cli_rs/0.114.0",
-    },
-    body: JSON.stringify({
-      model: process.env.AGENTROUTER_MODEL ?? "gpt-5.6-sol",
-      instructions: options.instructions,
-      input: options.input,
-      reasoning: { effort: "medium" },
-      max_output_tokens: 8_000,
-      store: false,
-      ...(options.textFormat ? { text: { format: options.textFormat } } : {}),
-    }),
-    signal: AbortSignal.timeout(100_000),
-    cache: "no-store",
+  const headers = {
+    Authorization: `Bearer ${process.env.AGENTROUTER_API_KEY}`,
+    "Content-Type": "application/json",
+    "User-Agent": process.env.AGENTROUTER_USER_AGENT ?? "codex_cli_rs/0.114.0",
+  };
+  const requestBody = (structured: boolean) => ({
+    model: process.env.AGENTROUTER_MODEL ?? "gpt-5.6-sol",
+    instructions: structured
+      ? options.instructions
+      : `${options.instructions}\nDevuelve solo JSON válido, sin Markdown ni texto adicional.`,
+    input: options.input,
+    reasoning: { effort: "medium" },
+    max_output_tokens: 8_000,
+    store: false,
+    ...(structured && options.textFormat
+      ? { text: { format: options.textFormat } }
+      : {}),
   });
 
-  const payload = (await response.json().catch(() => ({}))) as AgentRouterResponse;
-  if (!response.ok) {
-    throw new Error(
-      payload.error?.message ?? `AgentRouter respondió ${response.status}.`,
-    );
+  async function request(structured: boolean) {
+    const response = await fetch(`${baseUrl}/responses`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody(structured)),
+      signal: AbortSignal.timeout(100_000),
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => ({}))) as AgentRouterResponse;
+    if (!response.ok) {
+      throw new Error(
+        payload.error?.message ?? `AgentRouter respondió ${response.status}.`,
+      );
+    }
+    return { payload, text: readOutputText(payload) };
   }
 
-  const text = readOutputText(payload);
-  if (!text) {
+  let result = await request(Boolean(options.textFormat));
+  if (!result.text && options.textFormat) {
+    result = await request(false);
+  }
+  if (!result.text) {
     throw new Error(
-      `AgentRouter devolvió una respuesta sin contenido utilizable (${responseShape(payload)}).`,
+      `AgentRouter devolvió una respuesta sin contenido utilizable (${responseShape(result.payload)}).`,
     );
   }
-  return text;
+  return result.text;
 }
