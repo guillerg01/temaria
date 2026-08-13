@@ -47,6 +47,7 @@ export function VoiceTextarea({
   );
   const [listening, setListening] = useState(false);
   const [message, setMessage] = useState("");
+  const [diagnostic, setDiagnostic] = useState("");
   const recognitionRef = useRef<Recognition | null>(null);
   const baseRef = useRef("");
   const finalRef = useRef("");
@@ -70,15 +71,9 @@ export function VoiceTextarea({
       setMessage("Este navegador no admite dictado web.");
       return;
     }
-    try {
-      const permission = await navigator.permissions?.query({ name: "microphone" as PermissionName });
-      if (permission?.state === "denied") {
-        setMessage("El micrófono está bloqueado para este origen. Permítelo en el candado de la barra y recarga la página.");
-        return;
-      }
-    } catch {
-      // Some browsers do not expose microphone permission state.
-    }
+    // No bloqueamos por navigator.permissions: Chrome puede devolver "denied"
+    // para SpeechRecognition aunque el micrófono del sitio esté permitido.
+    // El propio reconocimiento es la fuente de verdad y devolverá el error real.
     const recognition = new recognitionConstructor();
     recognition.lang = "es-ES";
     recognition.continuous = true;
@@ -86,6 +81,7 @@ export function VoiceTextarea({
     baseRef.current = value.trimEnd();
     finalRef.current = "";
     setMessage("");
+    setDiagnostic("");
     recognition.onresult = (event) => {
       let interim = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -100,11 +96,16 @@ export function VoiceTextarea({
       const messages: Record<string, string> = {
         "audio-capture": "No se encontró un micrófono disponible.",
         "service-not-allowed": "Chrome no tiene disponible su servicio de reconocimiento de voz.",
-        "not-allowed": "Chrome rechazó el reconocimiento. Revisa el permiso del sitio y la privacidad del micrófono en Windows.",
+        "not-allowed": "Chrome no pudo iniciar el reconocimiento. Comprueba que el sitio esté en HTTPS/localhost, que el micrófono esté permitido para esta pestaña y que no haya otra aplicación usando el dispositivo.",
         "no-speech": "No se detectó voz.",
         network: "El servicio de dictado no pudo conectarse.",
       };
       setMessage(messages[event.error ?? ""] ?? "No se pudo iniciar el dictado.");
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setDiagnostic("Prueba en Chrome normal (no incógnito), con el sitio abierto en una pestaña activa. Si continúa, revisa chrome://settings/content/microphone y Configuración de Windows > Privacidad y seguridad > Micrófono.");
+      } else if (event.error === "audio-capture") {
+        setDiagnostic("Cierra Teams, Zoom, OBS u otra aplicación que pueda estar usando el micrófono y selecciona el dispositivo correcto en Windows.");
+      }
       setListening(false);
     };
     recognition.onend = () => setListening(false);
@@ -122,6 +123,6 @@ export function VoiceTextarea({
     {supported && <button type="button" className={cn("voice-button", listening && "voice-button-listening")} aria-label={listening ? "Detener dictado" : "Dictar por voz"} onClick={() => (listening ? stop() : void start())}>
       {listening ? <MicOff size={18} /> : <Mic size={18} />}<span>{listening ? "Detener" : "Dictar"}</span>
     </button>}
-    <span className="voice-status" aria-live="polite">{listening ? "Escuchando…" : message}</span>
+    <span className="voice-status" aria-live="polite">{listening ? "Escuchando…" : message}{diagnostic && !listening ? ` ${diagnostic}` : ""}</span>
   </div>;
 }
