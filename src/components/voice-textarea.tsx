@@ -1,34 +1,38 @@
 "use client";
 
-import { Mic, MicOff } from "lucide-react";
-import { type TextareaHTMLAttributes, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { LoaderCircle, Mic, Square } from "lucide-react";
+import {
+  type TextareaHTMLAttributes,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "@/lib/utils";
 
-type RecognitionResult = { transcript: string };
-type RecognitionEvent = Event & {
-  resultIndex: number;
-  results: ArrayLike<{ 0: RecognitionResult; isFinal: boolean }>;
-};
-type RecognitionError = Event & { error?: string };
-type Recognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((event: RecognitionEvent) => void) | null;
-  onerror: ((event: RecognitionError) => void) | null;
-  onend: (() => void) | null;
-};
-type RecognitionConstructor = new () => Recognition;
+type WhisperWorkerMessage =
+  | { type: "status"; message: string; progress?: number }
+  | { type: "result"; text: string }
+  | { type: "error"; message: string };
 
-function getRecognition() {
-  const browserWindow = window as typeof window & {
-    SpeechRecognition?: RecognitionConstructor;
-    webkitSpeechRecognition?: RecognitionConstructor;
-  };
-  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+async function decodeTo16Khz(blob: Blob) {
+  const context = new AudioContext();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    const offline = new OfflineAudioContext(
+      1,
+      Math.ceil(decoded.duration * 16_000),
+      16_000,
+    );
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    return rendered.getChannelData(0).slice();
+  } finally {
+    await context.close();
+  }
 }
 
 export function VoiceTextarea({
@@ -40,89 +44,162 @@ export function VoiceTextarea({
   value: string;
   onValueChange: (value: string) => void;
 }) {
-  const supported = useSyncExternalStore(
-    () => () => undefined,
-    () => Boolean(getRecognition()),
-    () => false,
-  );
-  const [listening, setListening] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
-  const [diagnostic, setDiagnostic] = useState("");
-  const recognitionRef = useRef<Recognition | null>(null);
-  const baseRef = useRef("");
-  const finalRef = useRef("");
+  const [progress, setProgress] = useState<number | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const baseValueRef = useRef("");
 
   useEffect(() => {
-    return () => recognitionRef.current?.stop();
+    return () => {
+      recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      workerRef.current?.terminate();
+    };
   }, []);
 
-  function stop() {
-    recognitionRef.current?.stop();
-    setListening(false);
-  }
-
-  async function start() {
-    if (!window.isSecureContext) {
-      setMessage("El dictado requiere HTTPS o localhost.");
-      return;
-    }
-    const recognitionConstructor = getRecognition();
-    if (!recognitionConstructor) {
-      setMessage("Este navegador no admite dictado web.");
-      return;
-    }
-    // No bloqueamos por navigator.permissions: Chrome puede devolver "denied"
-    // para SpeechRecognition aunque el micrófono del sitio esté permitido.
-    // El propio reconocimiento es la fuente de verdad y devolverá el error real.
-    const recognition = new recognitionConstructor();
-    recognition.lang = "es-ES";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    baseRef.current = value.trimEnd();
-    finalRef.current = "";
-    setMessage("");
-    setDiagnostic("");
-    recognition.onresult = (event) => {
-      let interim = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const text = event.results[index][0].transcript.trim();
-        if (event.results[index].isFinal) finalRef.current += `${text} `;
-        else interim += text;
-      }
-      const dictated = `${finalRef.current}${interim}`.trim();
-      onValueChange(`${baseRef.current}${baseRef.current && dictated ? " " : ""}${dictated}`);
-    };
-    recognition.onerror = (event) => {
-      const messages: Record<string, string> = {
-        "audio-capture": "No se encontró un micrófono disponible.",
-        "service-not-allowed": "Chrome no tiene disponible su servicio de reconocimiento de voz.",
-        "not-allowed": "Chrome no pudo iniciar el reconocimiento. Comprueba que el sitio esté en HTTPS/localhost, que el micrófono esté permitido para esta pestaña y que no haya otra aplicación usando el dispositivo.",
-        "no-speech": "No se detectó voz.",
-        network: "El servicio de dictado no pudo conectarse.",
+  function getWorker() {
+    if (!workerRef.current) {
+      workerRef.current = new Worker(
+        new URL("../workers/whisper.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      workerRef.current.onmessage = (
+        event: MessageEvent<WhisperWorkerMessage>,
+      ) => {
+        const data = event.data;
+        if (data.type === "status") {
+          setMessage(data.message);
+          setProgress(data.progress ?? null);
+          return;
+        }
+        setTranscribing(false);
+        setProgress(null);
+        if (data.type === "error") {
+          setMessage(data.message);
+          return;
+        }
+        const text = data.text.trim();
+        if (!text) {
+          setMessage("No se detectó una frase clara. Inténtalo hablando más cerca del micrófono.");
+          return;
+        }
+        const base = baseValueRef.current.trimEnd();
+        onValueChange(`${base}${base ? " " : ""}${text}`);
+        setMessage("Texto añadido.");
       };
-      setMessage(messages[event.error ?? ""] ?? "No se pudo iniciar el dictado.");
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setDiagnostic("Prueba en Chrome normal (no incógnito), con el sitio abierto en una pestaña activa. Si continúa, revisa chrome://settings/content/microphone y Configuración de Windows > Privacidad y seguridad > Micrófono.");
-      } else if (event.error === "audio-capture") {
-        setDiagnostic("Cierra Teams, Zoom, OBS u otra aplicación que pueda estar usando el micrófono y selecciona el dispositivo correcto en Windows.");
-      }
-      setListening(false);
-    };
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
+      workerRef.current.onerror = () => {
+        setTranscribing(false);
+        setProgress(null);
+        setMessage("No se pudo cargar Whisper en este navegador.");
+      };
+    }
+    return workerRef.current;
+  }
+
+  async function transcribe(blob: Blob) {
+    setTranscribing(true);
+    setMessage("Preparando audio…");
     try {
-      recognition.start();
-      setListening(true);
+      const audio = await decodeTo16Khz(blob);
+      getWorker().postMessage({ type: "transcribe", audio }, [audio.buffer]);
     } catch {
-      setMessage("El dictado ya estaba iniciándose. Inténtalo de nuevo.");
+      setTranscribing(false);
+      setMessage("No se pudo procesar la grabación. Prueba otra vez.");
     }
   }
 
-  return <div className={cn("voice-textarea", className)}>
-    <textarea {...props} value={value} onChange={(event) => onValueChange(event.target.value)} />
-    {supported && <button type="button" className={cn("voice-button", listening && "voice-button-listening")} aria-label={listening ? "Detener dictado" : "Dictar por voz"} onClick={() => (listening ? stop() : void start())}>
-      {listening ? <MicOff size={18} /> : <Mic size={18} />}<span>{listening ? "Detener" : "Dictar"}</span>
-    </button>}
-    <span className="voice-status" aria-live="polite">{listening ? "Escuchando…" : message}{diagnostic && !listening ? ` ${diagnostic}` : ""}</span>
-  </div>;
+  function stopRecording() {
+    recorderRef.current?.stop();
+  }
+
+  async function startRecording() {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setMessage("El dictado requiere HTTPS y un navegador moderno.");
+      return;
+    }
+    setMessage("");
+    baseValueRef.current = value;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        setRecording(false);
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
+        chunksRef.current = [];
+        if (blob.size) void transcribe(blob);
+      };
+      recorder.start(250);
+      setRecording(true);
+      setMessage("Habla y pulsa Detener cuando termines.");
+    } catch (error) {
+      const denied =
+        error instanceof DOMException &&
+        (error.name === "NotAllowedError" || error.name === "SecurityError");
+      setMessage(
+        denied
+          ? "Permite el micrófono para este sitio desde el candado del navegador."
+          : "No se pudo abrir el micrófono. Comprueba que otro programa no lo esté usando.",
+      );
+    }
+  }
+
+  const busy = recording || transcribing;
+
+  return (
+    <div className={cn("voice-textarea", className)}>
+      <textarea
+        {...props}
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+      />
+      <button
+        type="button"
+        className={cn(
+          "voice-button",
+          recording && "voice-button-listening",
+          transcribing && "voice-button-processing",
+        )}
+        aria-label={recording ? "Detener grabación" : "Dictar con Whisper"}
+        disabled={transcribing}
+        onClick={() => (recording ? stopRecording() : void startRecording())}
+      >
+        {recording ? (
+          <Square size={16} fill="currentColor" />
+        ) : transcribing ? (
+          <LoaderCircle className="voice-spinner" size={18} />
+        ) : (
+          <Mic size={18} />
+        )}
+        <span>{recording ? "Detener" : transcribing ? "Procesando" : "Dictar"}</span>
+      </button>
+      <span className="voice-status" aria-live="polite">
+        {message}
+        {progress !== null ? ` ${Math.round(progress)}%` : ""}
+      </span>
+      {busy && progress !== null && (
+        <span className="voice-progress" aria-hidden="true">
+          <span style={{ width: `${progress}%` }} />
+        </span>
+      )}
+    </div>
+  );
 }
