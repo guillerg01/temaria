@@ -4,19 +4,54 @@ type AgentRouterResponse = {
   output_text?: string;
   output?: Array<{
     type?: string;
-    content?: Array<{ type?: string; text?: string }>;
+    status?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+      refusal?: string;
+      json?: unknown;
+    }>;
   }>;
   error?: { message?: string };
+  status?: string;
+  incomplete_details?: unknown;
 };
 
 function readOutputText(payload: AgentRouterResponse) {
-  if (payload.output_text) return payload.output_text;
-  return (payload.output ?? [])
-    .flatMap((item) => item.content ?? [])
-    .filter((item) => item.type === "output_text" || item.type === "text")
-    .map((item) => item.text ?? "")
-    .join("\n")
-    .trim();
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
+
+  const parts = (payload.output ?? []).flatMap((item) =>
+    (item.content ?? []).flatMap((content) => {
+      if (typeof content.text === "string" && content.text.trim()) {
+        return [content.text.trim()];
+      }
+      if (typeof content.refusal === "string" && content.refusal.trim()) {
+        return [content.refusal.trim()];
+      }
+      if (content.json !== undefined) return [JSON.stringify(content.json)];
+      return [];
+    }),
+  );
+  return parts.join("\n").trim();
+}
+
+function responseShape(payload: AgentRouterResponse) {
+  return JSON.stringify({
+    status: payload.status,
+    incomplete: payload.incomplete_details ?? null,
+    output: (payload.output ?? []).map((item) => ({
+      type: item.type,
+      status: item.status,
+      content: (item.content ?? []).map((content) => ({
+        type: content.type,
+        hasText: typeof content.text === "string",
+        hasRefusal: typeof content.refusal === "string",
+        hasJson: content.json !== undefined,
+      })),
+    })),
+  });
 }
 
 export function isAgentRouterConfigured() {
@@ -28,10 +63,9 @@ export async function callAgentRouter(options: {
   input: Array<{ role: "user" | "assistant"; content: string }>;
   textFormat?: Record<string, unknown>;
 }) {
-  const baseUrl = (process.env.AGENTROUTER_BASE_URL ?? "https://agentrouter.org/v1").replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = (
+    process.env.AGENTROUTER_BASE_URL ?? "https://agentrouter.org/v1"
+  ).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/responses`, {
     method: "POST",
     headers: {
@@ -48,18 +82,22 @@ export async function callAgentRouter(options: {
       store: false,
       ...(options.textFormat ? { text: { format: options.textFormat } } : {}),
     }),
-    // Finish before the route's serverless deadline, leaving enough time to
-    // parse the provider response and return a useful 504 to the browser.
     signal: AbortSignal.timeout(100_000),
     cache: "no-store",
   });
 
   const payload = (await response.json().catch(() => ({}))) as AgentRouterResponse;
   if (!response.ok) {
-    throw new Error(payload.error?.message ?? `AgentRouter respondió ${response.status}.`);
+    throw new Error(
+      payload.error?.message ?? `AgentRouter respondió ${response.status}.`,
+    );
   }
 
   const text = readOutputText(payload);
-  if (!text) throw new Error("AgentRouter devolvió una respuesta vacía.");
+  if (!text) {
+    throw new Error(
+      `AgentRouter devolvió una respuesta sin contenido utilizable (${responseShape(payload)}).`,
+    );
+  }
   return text;
 }
