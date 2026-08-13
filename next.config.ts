@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  output: "standalone",
+  ...(process.env.VERCEL === "1" ? {} : { output: "standalone" as const }),
   async headers() {
     const scriptPolicy =
       process.env.NODE_ENV === "production"
