@@ -16,6 +16,8 @@ export const aiRequestSchema = z.object({
   prompt: z.string().trim().min(2).max(12_000),
   courseIds: z.array(z.string().max(100)).max(6).default([]),
   documentIds: z.array(z.string().max(300)).max(12).default([]),
+  chunkIds: z.array(z.string().max(300)).max(40).default([]),
+  excludeDocumentIds: z.array(z.string().max(300)).max(30).default([]),
   retrievalTerms: z
     .array(z.string().trim().min(2).max(160))
     .max(16)

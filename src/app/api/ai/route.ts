@@ -282,6 +282,8 @@ export async function POST(request: Request) {
     query: retrievalQuery,
     courseIds: body.courseIds,
     documentIds: body.documentIds,
+    chunkIds: body.chunkIds,
+    excludeDocumentIds: body.excludeDocumentIds,
     anchorTerms: body.retrievalTerms,
     limit:
       body.mode === "exam" ||
@@ -295,6 +297,9 @@ export async function POST(request: Request) {
       (body.mode === "exam" ||
         body.mode === "summary" ||
         body.mode === "visualize"),
+    balanceDocuments: body.mode === "exam",
+    randomize: body.mode === "exam",
+    includeAllCandidates: body.mode === "exam",
   });
 
   if (!results.length) {
@@ -359,7 +364,7 @@ export async function POST(request: Request) {
 
   const instructions = `Eres un tutor especializado en el certificado SSCS0208.
 Trabaja EXCLUSIVAMENTE con las fuentes incluidas en esta solicitud. No navegues por Internet, no uses conocimiento externo y no rellenes lagunas con suposiciones.
-Si las fuentes no permiten responder una parte, di literalmente: "No se encontró respaldo en las fuentes recuperadas". Esta frase describe solo esta búsqueda: nunca afirmes que algo no consta en todo el corpus salvo que la aplicación lo indique expresamente.
+Si las fuentes no permiten responder una parte, indícalo brevemente una sola vez. No repitas la misma advertencia en cada apartado. Esta limitación describe solo esta búsqueda: nunca afirmes que algo no consta en todo el corpus salvo que la aplicación lo indique expresamente.
 Todas las afirmaciones sustantivas deben llevar citas inline con el formato [F1], [F2], etc.
 No inventes referencias. Conserva un tono docente, preciso y práctico.
 ${modeInstructions[body.mode]}${examDetail}
@@ -548,6 +553,52 @@ ${modelContext}`;
       },
     };
 
+    const gradingSchema = {
+      type: "json_schema",
+      name: "exam_grading",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["nota_global", "criterio_global", "valoracion_global", "preguntas"],
+        properties: {
+          nota_global: { type: "number" },
+          criterio_global: { type: "string" },
+          valoracion_global: {
+            type: "object",
+            additionalProperties: false,
+            required: ["aciertos", "omisiones", "errores_conceptuales", "errores_redaccion", "retroalimentacion_concreta"],
+            properties: {
+              aciertos: { type: "array", items: { type: "string" } },
+              omisiones: { type: "array", items: { type: "string" } },
+              errores_conceptuales: { type: "array", items: { type: "string" } },
+              errores_redaccion: { type: "array", items: { type: "string" } },
+              retroalimentacion_concreta: { type: "array", items: { type: "string" } },
+            },
+          },
+          preguntas: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["numero", "nota", "maximo", "valoracion", "aciertos", "omisiones", "errores_conceptuales", "errores_redaccion", "respuesta_modelo"],
+              properties: {
+                numero: { type: "number" },
+                nota: { type: "number" },
+                maximo: { type: "number" },
+                valoracion: { type: "string" },
+                aciertos: { type: "array", items: { type: "string" } },
+                omisiones: { type: "array", items: { type: "string" } },
+                errores_conceptuales: { type: "array", items: { type: "string" } },
+                errores_redaccion: { type: "array", items: { type: "string" } },
+                respuesta_modelo: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    };
+
     const textFormat =
       body.mode === "exam"
         ? examSchema
@@ -557,6 +608,8 @@ ${modelContext}`;
             ? explanationSchema(false)
           : body.mode === "review"
             ? reviewSchema
+            : body.mode === "grade"
+              ? gradingSchema
             : undefined;
 
     const answer = await callAgentRouter({
@@ -600,6 +653,10 @@ ${modelContext}`;
     if (body.mode === "review") {
       const review = JSON.parse(answer);
       return NextResponse.json({ review, sources, grounded: true });
+    }
+
+    if (body.mode === "grade") {
+      return NextResponse.json({ answer, sources, grounded: true });
     }
 
     return NextResponse.json({

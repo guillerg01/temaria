@@ -43,6 +43,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { extractStudyHeadings, MarkdownView } from "@/components/markdown-view";
+import { StructuredGradingFeedback } from "@/components/grading-feedback";
 import { TeachingExplanationCard } from "@/components/teaching-explanation";
 import {
   clearStudyData,
@@ -110,7 +111,7 @@ function FeedbackList({ title, items }: { title: string; items?: string[] }) {
   return <section className="grading-feedback-section"><h4>{title}</h4><ul>{items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}</ul></section>;
 }
 
-function GradingFeedback({ value }: { value: string }) {
+function LegacyGradingFeedback({ value }: { value: string }) {
   const feedback = parseStructuredGrading(value);
   if (!feedback) return <MarkdownView>{value}</MarkdownView>;
   const global = feedback.valoracion_global;
@@ -121,6 +122,7 @@ function GradingFeedback({ value }: { value: string }) {
     {feedback.preguntas?.length ? <div className="grading-question-feedback"><h3>Revisión por pregunta</h3>{feedback.preguntas.map((question, index) => <details key={`grading-question-${question.numero ?? index}`}><summary><span>Pregunta {question.numero ?? index + 1}</span><strong>{question.nota ?? "—"}/{question.maximo ?? "—"}</strong></summary><div className="grading-question-content">{question.valoracion && <p>{question.valoracion}</p>}<FeedbackList title="Aciertos" items={question.aciertos} /><FeedbackList title="Omisiones" items={question.omisiones} /><FeedbackList title="Errores conceptuales" items={question.errores_conceptuales} /><FeedbackList title="Redacción" items={question.errores_redaccion} />{question.respuesta_modelo && <section className="grading-model-answer"><h4>Respuesta modelo</h4><p>{question.respuesta_modelo}</p></section>}</div></details>)}</div> : null}
   </div>;
 }
+void LegacyGradingFeedback;
 type CatalogCourse = Omit<Course, "documents"> & {
   documents: CatalogDocument[];
 };
@@ -2077,14 +2079,22 @@ function ExamView({
     setError("");
     setGrading("");
     try {
+      const recentExams = examHistory.slice(0, 3);
+      const recentTopics = recentExams
+        .flatMap((item) => item.exam.questions.map((question) => question.prompt))
+        .slice(0, 18);
+      const excludeDocumentIds = [...new Set(
+        recentExams.flatMap((item) => item.sources.map((source) => source.documentId)),
+      )].slice(0, 30);
       const response = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "exam",
-          prompt: `Genera un examen equilibrado sobre el alcance seleccionado. Incluye preguntas de aplicación y no solo memorización. Si el alcance incluye todos los cursos, distribuye las preguntas entre ellos. En sourceIds usa exclusivamente identificadores exactos de las fuentes recibidas.`,
+          prompt: `Genera un examen equilibrado sobre el alcance seleccionado. Incluye preguntas de aplicación y no solo memorización. Distribuye las preguntas entre cursos, unidades y documentos diferentes. No concentres el examen en un único procedimiento. Evita repetir estos enunciados de los tres exámenes más recientes:\n${recentTopics.length ? recentTopics.map((topic) => `- ${topic}`).join("\n") : "- No hay exámenes recientes."}\nEn sourceIds usa exclusivamente identificadores exactos de las fuentes recibidas.`,
           courseIds: globalScope === "all" ? [] : [globalScope],
           documentIds: [],
+          excludeDocumentIds,
           history: [],
           examOptions: {
             questionCount: count,
@@ -2139,6 +2149,7 @@ function ExamView({
       number: index + 1,
       type: question.type,
       prompt: question.prompt,
+      options: question.options,
       expectedAnswer: question.answer,
       rationale: question.rationale,
       rubric: question.rubric,
@@ -2150,16 +2161,18 @@ function ExamView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "grade",
-          prompt: `Evalúa este examen completo. Da una nota global de 0 a 10 y una valoración por pregunta. Penaliza las omisiones, distingue errores conceptuales de redacción y ofrece una respuesta modelo mejorada.\n\n${JSON.stringify(submission)}`,
+          prompt: `Evalúa este examen completo con nota global de 0 a 10. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones. No contradigas expectedAnswer. Si falta respaldo documental, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
           courseIds: globalScope === "all" ? [] : [globalScope],
-          documentIds: [],
+          documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
+          chunkIds: [...new Set(exam.questions.flatMap((question) => question.sourceIds))].slice(0, 40),
+          retrievalTerms: exam.questions.map((question) => question.prompt).slice(0, 16),
           history: [],
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setGrading(data.answer);
-      setSources(data.sources ?? sources);
+      setSources(sources);
       const structuredGrading = parseStructuredGrading(String(data.answer));
       const scoreMatch = String(data.answer).match(
         /(?:nota|calificaciÃ³n)(?:\s+global)?[^0-9]{0,20}(10|[0-9](?:[.,][0-9]+)?)/i,
@@ -2175,7 +2188,7 @@ function ExamView({
                 ...item,
                 answers,
                 grading: data.answer,
-                sources: data.sources ?? sources,
+                sources,
                 score,
                 gradedAt,
                 updatedAt: gradedAt,
@@ -2427,7 +2440,7 @@ function ExamView({
                 {grading && (
                   <div className="grading-result">
                     <span className="eyebrow">Retroalimentación</span>
-                    <GradingFeedback value={grading} />
+                    <StructuredGradingFeedback value={grading} />
                   </div>
                 )}
                 {sources.length > 0 && (

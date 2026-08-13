@@ -149,9 +149,14 @@ export function retrieveKnowledge(options: {
   query: string;
   courseIds?: string[];
   documentIds?: string[];
+  chunkIds?: string[];
+  excludeDocumentIds?: string[];
   anchorTerms?: string[];
   limit?: number;
   balanceCourses?: boolean;
+  balanceDocuments?: boolean;
+  randomize?: boolean;
+  includeAllCandidates?: boolean;
 }) {
   const queryTerms = terms(options.query);
   const anchorTerms = [
@@ -159,26 +164,47 @@ export function retrieveKnowledge(options: {
   ];
   const courseSet = new Set(options.courseIds ?? []);
   const documentSet = new Set(options.documentIds ?? []);
+  const chunkSet = new Set(options.chunkIds ?? []);
+  const excludedDocumentSet = new Set(options.excludeDocumentIds ?? []);
   const limit = Math.min(Math.max(options.limit ?? 8, 1), 14);
 
-  const ranked = corpus.chunks
+  let ranked = corpus.chunks
     .filter((chunk) => !courseSet.size || courseSet.has(chunk.courseId))
     .filter((chunk) => !documentSet.size || documentSet.has(chunk.documentId))
+    .filter((chunk) => !chunkSet.size || chunkSet.has(chunk.id))
+    .filter((chunk) => !excludedDocumentSet.has(chunk.documentId))
     .map((chunk) => ({
       chunk,
       score: scoreChunk(chunk, options.query, queryTerms, anchorTerms),
     }))
-    .filter((result) => result.score > 0)
+    .filter((result) => options.includeAllCandidates || result.score > 0)
     .sort((a, b) => b.score - a.score);
 
+  if (options.randomize) {
+    ranked = ranked
+      .map((result) => ({ result, random: Math.random() }))
+      .sort((a, b) => a.random - b.random)
+      .map(({ result }) => result);
+  }
+
   if (!options.balanceCourses || courseSet.size || documentSet.size) {
+    if (options.balanceDocuments) {
+      const firstByDocument = new Set<string>();
+      const diverse = ranked.filter(({ chunk }) => {
+        if (firstByDocument.has(chunk.documentId)) return false;
+        firstByDocument.add(chunk.documentId);
+        return true;
+      });
+      const selectedIds = new Set(diverse.map(({ chunk }) => chunk.id));
+      return [...diverse, ...ranked.filter(({ chunk }) => !selectedIds.has(chunk.id))].slice(0, limit);
+    }
     return ranked.slice(0, limit);
   }
 
   const perCourse = new Map<string, typeof ranked>();
   for (const result of ranked) {
     const current = perCourse.get(result.chunk.courseId) ?? [];
-    current.push(result);
+    if (!options.balanceDocuments || !current.some((item) => item.chunk.documentId === result.chunk.documentId)) current.push(result);
     perCourse.set(result.chunk.courseId, current);
   }
 
