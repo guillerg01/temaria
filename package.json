@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "generate:corpus": "node scripts/generate-corpus.mjs",
+    "prepare:onnx": "node scripts/copy-onnx-runtime.mjs",
     "encrypt:data": "node scripts/encrypt-private-data.mjs",
     "gateway:ai": "node --env-file=.env --env-file-if-exists=.env.gateway scripts/agentrouter-local-gateway.mjs",
-    "predev": "npm run generate:corpus",
+    "predev": "npm run generate:corpus && npm run prepare:onnx",
     "dev": "next dev",
-    "prebuild": "npm run generate:corpus",
+    "prebuild": "npm run generate:corpus && npm run prepare:onnx",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

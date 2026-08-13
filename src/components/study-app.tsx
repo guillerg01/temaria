@@ -1983,6 +1983,19 @@ function ExamView({
   const [busy, setBusy] = useState(false);
   const [gradingBusy, setGradingBusy] = useState(false);
   const [error, setError] = useState("");
+
+  function visibleExamInstructions(activeExam: GeneratedExam) {
+    const instructions = activeExam.instructions.trim();
+    const duplicatesQuestionContent =
+      instructions.length > 600 ||
+      /P1\.|SECCI[ÓO]N 2|SOLUCIONES,? RAZONAMIENTOS/i.test(instructions) ||
+      activeExam.questions.some((question) =>
+        instructions.includes(question.prompt.slice(0, 70)),
+      );
+    return duplicatesQuestionContent
+      ? "Responde todas las preguntas antes de calificar. En las respuestas abiertas se valora la comprensión y la aplicación práctica."
+      : instructions;
+  }
   const [examHistory, setExamHistory] = useState<SavedExam[]>([]);
   const [activeExamId, setActiveExamId] = useState("");
   const [historyReady, setHistoryReady] = useState(false);
@@ -2430,7 +2443,7 @@ function ExamView({
                 <div className="exam-title">
                   <span className="eyebrow">Examen activo</span>
                   <h2>{exam.title}</h2>
-                  <p>{exam.instructions}</p>
+                  <p>{visibleExamInstructions(exam)}</p>
                 </div>
                 <div className="question-list">
                   {exam.questions.map((question, index) => (

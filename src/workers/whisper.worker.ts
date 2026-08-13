@@ -5,6 +5,10 @@ env.useBrowserCache = true;
 if (env.backends.onnx.wasm) {
   env.backends.onnx.wasm.numThreads = 1;
   env.backends.onnx.wasm.proxy = false;
+  env.backends.onnx.wasm.wasmPaths = {
+    mjs: "/onnxruntime/ort-wasm-simd-threaded.asyncify.mjs",
+    wasm: "/onnxruntime/ort-wasm-simd-threaded.asyncify.wasm",
+  };
 }
 
 type TranscriptionOutput =
