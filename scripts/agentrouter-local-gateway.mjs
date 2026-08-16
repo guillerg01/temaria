@@ -51,7 +51,11 @@ const server = createServer(async (request, response) => {
   const requestId = randomUUID();
 
   if (request.method === "GET" && request.url === "/health") {
-    return sendJson(response, 200, { status: "ok", requestId });
+    return sendJson(response, 200, {
+      status: "ok",
+      requestId,
+      authorized: authorized(request.headers.authorization),
+    });
   }
 
   if (request.method !== "POST" || request.url !== "/v1/responses") {

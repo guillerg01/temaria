@@ -5,12 +5,14 @@ out/
 build/
 coverage/
 public/onnxruntime/
+release/
 
 # Environment and secrets
 .env*
 !.env.example
 *.pem
 .env.gateway
+.temaria-proxy/
 
 # Private course material and extracted data
 course-content/

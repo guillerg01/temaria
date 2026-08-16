@@ -5,6 +5,7 @@
   "scripts": {
     "generate:corpus": "node scripts/generate-corpus.mjs",
     "prepare:onnx": "node scripts/copy-onnx-runtime.mjs",
+    "package:proxy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-proxy-package.ps1",
     "encrypt:data": "node scripts/encrypt-private-data.mjs",
     "gateway:ai": "node --env-file=.env --env-file-if-exists=.env.gateway scripts/agentrouter-local-gateway.mjs",
     "predev": "npm run generate:corpus && npm run prepare:onnx",

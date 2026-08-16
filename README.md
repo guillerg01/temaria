@@ -138,6 +138,20 @@ Antes de desplegar:
 
 El proyecto produce una salida `standalone`. La configuración recomendada está en `render.yaml` y ejecuta Temaria como un servicio Node persistente en Render.
 
+### Proxy doméstico de un clic
+
+Cuando AgentRouter funciona desde una conexión doméstica pero bloquea la salida de Render, Windows puede mantener el gateway temporal con [`start-temaria-proxy.bat`](./start-temaria-proxy.bat).
+
+Preparación única en la PC que permanecerá encendida:
+
+1. Instala ngrok y ejecuta `ngrok config add-authtoken TU_TOKEN`.
+2. Copia o clona este repositorio en esa PC.
+3. Haz doble clic en `start-temaria-proxy.bat`.
+4. La primera ejecución solicita la API key de AgentRouter y la API key de Render. Se guardan cifradas con DPAPI y solo el mismo usuario de Windows puede descifrarlas.
+5. Mantén la ventana minimizada. Al cerrarla se detienen el gateway y ngrok.
+
+El lanzador instala Node.js LTS mediante `winget` si falta, inicia el gateway en `127.0.0.1:4317`, obtiene la URL HTTPS de ngrok, actualiza en Render `AGENTROUTER_BASE_URL` y `AGENTROUTER_API_KEY`, solicita un despliegue y vigila si el túnel cambia. Los logs locales quedan en `%LOCALAPPDATA%\TemariaProxy\runtime` y las credenciales nunca se versionan.
+
 ### Despliegue recomendado en Render
 
 1. Crea un Blueprint desde este repositorio y aplica `render.yaml`.
