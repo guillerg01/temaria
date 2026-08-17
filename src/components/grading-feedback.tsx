@@ -92,7 +92,7 @@ export function StructuredGradingFeedback({
         {onAppeal && <div className="grading-appeal">
           {!appeal && <button type="button" className="grading-appeal-button" onClick={() => { setOpenAppeal(index); setComment(""); }}>
             <MessageCircleWarning size={16} />
-            Revisar esta calificación
+            Quejarse de esta calificación
           </button>}
           {openAppeal === index && !appeal && <form className="grading-appeal-form" onSubmit={(event) => { event.preventDefault(); if (comment.trim()) void onAppeal(index, comment.trim()); }}>
             <label htmlFor={`appeal-${questionId}`}>Explica por qué crees que esta calificación debería revisarse</label>
