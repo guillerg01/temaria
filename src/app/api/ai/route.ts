@@ -149,6 +149,13 @@ function buildLocalFallbackExam(
     const type = types[index % types.length];
     const sourceIds = [source.id];
     const excerpt = source.text.replace(/\s+/g, " ").trim().slice(0, 360);
+    const normalizedTitle = source.sectionTitle.trim().toLocaleLowerCase("es");
+    const normalizedText = source.text.toLocaleLowerCase("es");
+    const titleTerms = normalizedTitle
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((term) => term.length >= 5);
+    const titleMatchesContent =
+      titleTerms.length > 0 && titleTerms.some((term) => normalizedText.includes(term));
     const distractors = results
       .filter((candidate) => candidate.chunk.id !== source.id)
       .map((candidate) => candidate.chunk.sectionTitle)
@@ -174,8 +181,12 @@ function buildLocalFallbackExam(
       type,
       prompt:
         type === "essay"
-          ? `Desarrolla una explicación sobre ${source.sectionTitle}, relacionándola con la aplicación profesional descrita en la fuente.`
-          : `Explica brevemente las ideas esenciales de ${source.sectionTitle}.`,
+          ? titleMatchesContent
+            ? `Desarrolla una explicación sobre ${source.sectionTitle}, relacionándola con la aplicación profesional descrita en la fuente.`
+            : `Desarrolla las ideas principales expuestas en ${source.sourceLabel} y explica su aplicación profesional.`
+          : titleMatchesContent
+            ? `Explica brevemente las ideas esenciales de ${source.sectionTitle}.`
+            : `Resume brevemente las ideas principales expuestas en ${source.sourceLabel}.`,
       options: [],
       answer: excerpt,
       rationale: `Respuesta modelo extraída de la fuente ${source.id}.`,
@@ -418,7 +429,7 @@ Si las fuentes no permiten responder una parte, indícalo brevemente una sola ve
 Todas las afirmaciones sustantivas deben llevar citas inline con el formato [F1], [F2], etc.
 No inventes referencias. Conserva un tono docente, preciso y práctico.
 ${modeInstructions[body.mode]}${examDetail}
-${body.mode === "grade" ? "Al valorar errores_redaccion, déjalo vacío salvo que la respuesta sea realmente incomprensible; nunca penalices errores ortográficos leves ni exijas coincidencia literal con la respuesta esperada. Prioriza si la idea es correcta, equivalente y aplicable." : ""}
+${body.mode === "grade" ? "Al valorar errores_redaccion, déjalo vacío salvo que la respuesta sea realmente incomprensible; nunca penalices errores ortográficos leves ni exijas coincidencia literal con la respuesta esperada. Prioriza si la idea es correcta, equivalente y aplicable. Antes de puntuar cada pregunta, comprueba que prompt, expectedAnswer, rationale, rubric y fuentes tratan realmente el mismo tema. Si están desalineados, considera el ítem defectuoso: no penalices al estudiante por omisiones exigidas solo por una referencia ajena al enunciado. Valora la pertinencia y corrección de su respuesta respecto al prompt, menciona el defecto una sola vez en valoracion y ofrece una respuesta_modelo que conteste al prompt real." : ""}
 ${body.mode === "exam" ? "Para preguntas de desarrollo: presenta un caso concreto con situación, cambio observable, necesidad afectada, profesionales implicados y registros esperados. Pide solo actuaciones relacionadas con esos datos y escribe una respuesta modelo completa, directamente como contestación del estudiante, no como lista de criterios." : ""}
 
 Para cualquier visualización:

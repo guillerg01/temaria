@@ -2178,6 +2178,7 @@ function ExamView({
       expectedAnswer: question.answer,
       rationale: question.rationale,
       rubric: question.rubric,
+      sourceIds: question.sourceIds,
       studentAnswer: answers[question.id] ?? "[Sin respuesta]",
     }));
     try {
@@ -2186,7 +2187,7 @@ function ExamView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "grade",
-          prompt: `Evalúa este examen completo con nota global de 0 a 10. Valora comprensión, razonamiento y aplicación, no ortografía. Las faltas leves de tildes, puntuación o redacción no restan puntos y no deben listarse. Solo penaliza la expresión si resulta tan confusa que impide entender la idea. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones o errores conceptuales. Acepta respuestas equivalentes aunque no coincidan literalmente con expectedAnswer. No contradigas expectedAnswer. Si falta respaldo documental, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
+          prompt: `Evalúa este examen completo con nota global de 0 a 10. Valora comprensión, razonamiento y aplicación, no ortografía. Las faltas leves de tildes, puntuación o redacción no restan puntos y no deben listarse. Solo penaliza la expresión si resulta tan confusa que impide entender la idea. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones o errores conceptuales. Acepta respuestas equivalentes aunque no coincidan literalmente con expectedAnswer. Antes de calificar, verifica que prompt, expectedAnswer, rationale, rubric y fuentes correspondan al mismo tema. Si no corresponden, el ítem está defectuoso: no exijas contenidos ajenos al enunciado ni asignes cero a una respuesta pertinente. Califica lo que el estudiante respondió respecto al enunciado, señala la desalineación una sola vez y redacta la respuesta modelo para el enunciado real. Si falta respaldo documental pero el ítem sí es coherente, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
           courseIds: globalScope === "all" ? [] : [globalScope],
           documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
           chunkIds: [...new Set(exam.questions.flatMap((question) => question.sourceIds))].slice(0, 40),
