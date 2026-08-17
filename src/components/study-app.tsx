@@ -57,6 +57,7 @@ import type {
   Course,
   CourseDocument,
   GeneratedExam,
+  ExamAppealReview,
   OfficialAssessment,
   SavedExam,
   SourceReference,
@@ -1982,6 +1983,8 @@ function ExamView({
   const [sources, setSources] = useState<SourceReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [gradingBusy, setGradingBusy] = useState(false);
+  const [appealResults, setAppealResults] = useState<Record<string, ExamAppealReview>>({});
+  const [appealBusyQuestionId, setAppealBusyQuestionId] = useState("");
   const [error, setError] = useState("");
 
   function visibleExamInstructions(activeExam: GeneratedExam) {
@@ -2035,6 +2038,7 @@ function ExamView({
         setExam(latest.exam);
         setAnswers(latest.answers);
         setGrading(latest.grading);
+        setAppealResults(latest.appeals ?? {});
         setSources(latest.sources);
         setDifficulty(latest.difficulty);
         setCount(latest.requestedQuestionCount);
@@ -2070,6 +2074,7 @@ function ExamView({
     setExam(saved.exam);
     setAnswers(saved.answers);
     setGrading(saved.grading);
+    setAppealResults(saved.appeals ?? {});
     setSources(saved.sources);
     setDifficulty(saved.difficulty);
     setCount(saved.requestedQuestionCount);
@@ -2155,6 +2160,7 @@ function ExamView({
       setExam(generatedExam);
       setAnswers({});
       setSources(generatedSources);
+      setAppealResults({});
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -2166,11 +2172,9 @@ function ExamView({
     }
   }
 
-  async function gradeExam() {
-    if (!exam) return;
-    setGradingBusy(true);
-    setError("");
-    const submission = exam.questions.map((question, index) => ({
+  function buildExamSubmission() {
+    if (!exam) return [];
+    return exam.questions.map((question, index) => ({
       number: index + 1,
       type: question.type,
       prompt: question.prompt,
@@ -2181,13 +2185,20 @@ function ExamView({
       sourceIds: question.sourceIds,
       studentAnswer: answers[question.id] ?? "[Sin respuesta]",
     }));
+  }
+
+  async function gradeExam(extraContext = "") {
+    if (!exam) return;
+    setGradingBusy(true);
+    setError("");
+    const submission = buildExamSubmission();
     try {
       const response = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "grade",
-          prompt: `Evalúa este examen completo con nota global de 0 a 10. Valora comprensión, razonamiento y aplicación, no ortografía. Las faltas leves de tildes, puntuación o redacción no restan puntos y no deben listarse. Solo penaliza la expresión si resulta tan confusa que impide entender la idea. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones o errores conceptuales. Acepta respuestas equivalentes aunque no coincidan literalmente con expectedAnswer. Antes de calificar, verifica que prompt, expectedAnswer, rationale, rubric y fuentes correspondan al mismo tema. Si no corresponden, el ítem está defectuoso: no exijas contenidos ajenos al enunciado ni asignes cero a una respuesta pertinente. Califica lo que el estudiante respondió respecto al enunciado, señala la desalineación una sola vez y redacta la respuesta modelo para el enunciado real. Si falta respaldo documental pero el ítem sí es coherente, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.\n\n${JSON.stringify(submission)}`,
+          prompt: `Evalúa este examen completo con nota global de 0 a 10. Valora comprensión, razonamiento y aplicación, no ortografía. Las faltas leves de tildes, puntuación o redacción no restan puntos y no deben listarse. Solo penaliza la expresión si resulta tan confusa que impide entender la idea. Explica brevemente por qué obtiene cada nota, enumera solo aciertos y mejoras que no hayas dicho ya, y ofrece un ejemplo exacto de cómo debía responder. No repitas la misma observación entre valoración, listas y respuesta modelo. REGLA OBLIGATORIA: si una pregunta es multiple_choice y studentAnswer coincide con expectedAnswer o con la opción correcta, concede la puntuación completa; no exijas desarrollar el texto de la opción. Solo las respuestas cortas y de desarrollo se penalizan por omisiones o errores conceptuales. Acepta respuestas equivalentes aunque no coincidan literalmente con expectedAnswer. Antes de calificar, verifica que prompt, expectedAnswer, rationale, rubric y fuentes correspondan al mismo tema. Si no corresponden, el ítem está defectuoso: no exijas contenidos ajenos al enunciado ni asignes cero a una respuesta pertinente. Califica lo que el estudiante respondió respecto al enunciado, señala la desalineación una sola vez y redacta la respuesta modelo para el enunciado real. Si falta respaldo documental pero el ítem sí es coherente, indícalo una sola vez en criterio_global y califica usando expectedAnswer, rationale y rubric.${extraContext}\n\n${JSON.stringify(submission)}`,
           courseIds: globalScope === "all" ? [] : [globalScope],
           documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
           chunkIds: [...new Set(exam.questions.flatMap((question) => question.sourceIds))].slice(0, 40),
@@ -2234,6 +2245,56 @@ function ExamView({
       );
     } finally {
       setGradingBusy(false);
+    }
+  }
+
+  async function appealQuestion(questionIndex: number, userComment: string) {
+    if (!exam || !grading) return;
+    const question = exam.questions[questionIndex];
+    if (!question) return;
+    setAppealBusyQuestionId(question.id);
+    setError("");
+    try {
+      const parsedGrading = parseStructuredGrading(grading);
+      const originalFeedback = parsedGrading?.preguntas?.[questionIndex] ?? null;
+      const previousScore = typeof originalFeedback?.nota === "number" ? originalFeedback.nota : 0;
+      const response = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "appeal",
+          prompt: `Revisa esta queja de una calificación. Decide entre uphold (mantener) o increase (subir). Nunca bajes la nota. Explica al estudiante de forma breve y clara qué decidiste y por qué. Si increase, recommendedScore debe ser mayor que previousScore y razonable respecto al máximo. No subas por simpatía: solo por una omisión del corrector, una respuesta equivalente válida, una fuente desalineada o una interpretación más justa del enunciado.\n\nPREGUNTA:\n${JSON.stringify({ number: questionIndex + 1, type: question.type, prompt: question.prompt, options: question.options, expectedAnswer: question.answer, rationale: question.rationale, rubric: question.rubric, sourceIds: question.sourceIds })}\n\nRESPUESTA DEL ESTUDIANTE:\n${answers[question.id] ?? "[Sin respuesta]"}\n\nCALIFICACIÓN ORIGINAL DE ESTA PREGUNTA:\n${JSON.stringify(originalFeedback)}\n\nQUEJA Y ACLARACIÓN DEL ESTUDIANTE:\n${userComment}`,
+          courseIds: globalScope === "all" ? [] : [globalScope],
+          documentIds: [...new Set(sources.map((source) => source.documentId))].slice(0, 12),
+          chunkIds: question.sourceIds,
+          retrievalTerms: [question.prompt.slice(0, 500), userComment.slice(0, 500)],
+          history: [],
+        }),
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok || !data.appeal) throw new Error(data.error ?? "No se pudo revisar la queja.");
+      const rawAppeal = data.appeal as Partial<ExamAppealReview>;
+      const decision = rawAppeal.decision === "increase" && Number(rawAppeal.recommendedScore) > previousScore ? "increase" : "uphold";
+      const appeal: ExamAppealReview = {
+        questionId: question.id,
+        userComment,
+        decision,
+        previousScore,
+        recommendedScore: decision === "increase" ? Number(rawAppeal.recommendedScore) : previousScore,
+        responseToStudent: String(rawAppeal.responseToStudent ?? "La nota se mantiene porque la aclaración no cambia la valoración."),
+        analysis: String(rawAppeal.analysis ?? ""),
+        createdAt: new Date().toISOString(),
+      };
+      setAppealResults((current) => ({ ...current, [question.id]: appeal }));
+      if (decision === "increase") {
+        await gradeExam(`\n\nREVISIÓN DE UNA QUEJA YA ANALIZADA: La pregunta ${questionIndex + 1} tiene una revisión favorable. Usa esta resolución como contexto adicional, recalifica el examen completo y aplica la subida solo a esa pregunta si sigue siendo coherente. Resolución: ${JSON.stringify(appeal)}`);
+      }
+      const updatedAt = new Date().toISOString();
+      setExamHistory((current) => current.map((item) => item.id === activeExamId ? { ...item, appeals: { ...(item.appeals ?? {}), [question.id]: appeal }, updatedAt } : item));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "No se pudo revisar la queja.");
+    } finally {
+      setAppealBusyQuestionId("");
     }
   }
   return (
@@ -2470,7 +2531,13 @@ function ExamView({
                 {grading && (
                   <div className="grading-result">
                     <span className="eyebrow">Retroalimentación</span>
-                    <StructuredGradingFeedback value={grading} exam={exam} />
+                    <StructuredGradingFeedback
+                      value={grading}
+                      exam={exam}
+                      appealResults={appealResults}
+                      appealBusyQuestionId={appealBusyQuestionId}
+                      onAppeal={appealQuestion}
+                    />
                   </div>
                 )}
                 {sources.length > 0 && (

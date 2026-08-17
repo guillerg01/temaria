@@ -1,7 +1,9 @@
 "use client";
 
 import { MarkdownView } from "@/components/markdown-view";
-import type { GeneratedExam } from "@/lib/types";
+import { MessageCircleWarning, Send, X } from "lucide-react";
+import { useState } from "react";
+import type { ExamAppealReview, GeneratedExam } from "@/lib/types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -44,7 +46,21 @@ function FeedbackList({ title, items }: { title: string; items: string[] }) {
   return <section className="grading-feedback-section"><h4>{title}</h4><ul>{items.map((item, index) => <li key={`${title}-${index}`}>{item}</li>)}</ul></section>;
 }
 
-export function StructuredGradingFeedback({ value, exam }: { value: string; exam?: GeneratedExam }) {
+export function StructuredGradingFeedback({
+  value,
+  exam,
+  appealResults = {},
+  appealBusyQuestionId,
+  onAppeal,
+}: {
+  value: string;
+  exam?: GeneratedExam;
+  appealResults?: Record<string, ExamAppealReview>;
+  appealBusyQuestionId?: string;
+  onAppeal?: (questionIndex: number, comment: string) => Promise<void>;
+}) {
+  const [openAppeal, setOpenAppeal] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
   const feedback = parseGrading(value);
   if (!feedback) return <MarkdownView>{value}</MarkdownView>;
   const global = (feedback.valoracion_global && typeof feedback.valoracion_global === "object" ? feedback.valoracion_global : {}) as UnknownRecord;
@@ -65,11 +81,33 @@ export function StructuredGradingFeedback({ value, exam }: { value: string; exam
       const maximum = numberValue(question, ["maximo", "puntuacion_maxima", "maxima"]);
       const explanation = stringValue(question, ["valoracion", "comentario", "justificacion", "por_que_esa_nota"]);
       const modelAnswer = stringValue(question, ["respuesta_modelo", "respuesta_mejorada", "ejemplo_respuesta"]) || exam?.questions[index]?.answer || "";
+      const questionId = exam?.questions[index]?.id ?? `question-${index}`;
+      const appeal = appealResults[questionId];
+      const submitting = appealBusyQuestionId === questionId;
       return <details key={`grading-question-${index}`} open><summary><span>Pregunta {numberValue(question, ["numero"]) ?? index + 1}</span><strong>{questionScore ?? "—"}/{maximum ?? "—"}</strong></summary><div className="grading-question-content">
         {explanation && <section className="grading-score-reason"><h4>Por qué obtuviste esa nota</h4><p>{explanation}</p></section>}
         <FeedbackList title="Lo que hiciste bien" items={listValue(question, ["aciertos", "fortalezas"])} />
         <FeedbackList title="Lo que faltó o debes corregir" items={[...listValue(question, ["omisiones", "aspectos_mejora"]), ...listValue(question, ["errores_conceptuales"]), ...listValue(question, ["errores_redaccion"])]} />
         {modelAnswer && <section className="grading-model-answer"><h4>Así debías responder</h4><p>{modelAnswer}</p></section>}
+        {onAppeal && <div className="grading-appeal">
+          {!appeal && <button type="button" className="grading-appeal-button" onClick={() => { setOpenAppeal(index); setComment(""); }}>
+            <MessageCircleWarning size={16} />
+            Revisar esta calificación
+          </button>}
+          {openAppeal === index && !appeal && <form className="grading-appeal-form" onSubmit={(event) => { event.preventDefault(); if (comment.trim()) void onAppeal(index, comment.trim()); }}>
+            <label htmlFor={`appeal-${questionId}`}>Explica por qué crees que esta calificación debería revisarse</label>
+            <textarea id={`appeal-${questionId}`} value={comment} onChange={(event) => setComment(event.target.value)} rows={4} autoFocus placeholder="Indica qué parte de tu respuesta consideras correcta o qué contexto no se tuvo en cuenta..." />
+            <div className="grading-appeal-actions">
+              <button type="button" className="button button-secondary" onClick={() => setOpenAppeal(null)} disabled={submitting}><X size={15} />Cancelar</button>
+              <button type="submit" className="button button-primary" disabled={submitting || !comment.trim()}><Send size={15} />{submitting ? "Revisando..." : "Enviar revisión"}</button>
+            </div>
+          </form>}
+          {appeal && <section className={`grading-appeal-result grading-appeal-${appeal.decision}`}>
+            <h4>{appeal.decision === "increase" ? "La nota se ha revisado" : "La nota se mantiene"}</h4>
+            <p>{appeal.responseToStudent}</p>
+            {appeal.decision === "increase" && <strong>{appeal.previousScore}/10 → {appeal.recommendedScore}/10</strong>}
+          </section>}
+        </div>}
       </div></details>;
     })}</div>}
   </div>;

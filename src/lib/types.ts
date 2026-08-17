@@ -6,6 +6,7 @@ export type StudyMode =
   | "solve"
   | "exam"
   | "grade"
+  | "appeal"
   | "review";
 
 export type TeachingVisual = {
@@ -147,6 +148,18 @@ export type SavedExam = {
   createdAt: string;
   updatedAt: string;
   gradedAt?: string;
+  appeals?: Record<string, ExamAppealReview>;
+};
+
+export type ExamAppealReview = {
+  questionId: string;
+  userComment: string;
+  decision: "uphold" | "increase";
+  previousScore: number;
+  recommendedScore: number;
+  responseToStudent: string;
+  analysis: string;
+  createdAt: string;
 };
 
 export type OfficialAssessmentQuestion = {

@@ -8,6 +8,7 @@ export const studyModeSchema = z.enum([
   "solve",
   "exam",
   "grade",
+  "appeal",
   "review",
 ]);
 

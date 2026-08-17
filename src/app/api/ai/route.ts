@@ -51,6 +51,8 @@ const modeInstructions: Record<StudyMode, string> = {
   exam: "Genera un examen variado y exigente. Devuelve primero las preguntas y después una sección separada de soluciones, razonamientos y criterios de corrección. Incluye identificadores de fuente en cada solución.",
   grade:
     "Califica la comprensión y el razonamiento del estudiante con una nota de 0 a 10. Las faltas leves de ortografía, tildes, puntuación o redacción NO reducen la nota ni deben aparecer como errores: interpreta el sentido de la respuesta. Solo menciona y penaliza la expresión cuando sea tan confusa o contradictoria que impida entender qué quiso decir. Desglosa aciertos, omisiones, errores conceptuales, retroalimentación concreta y una respuesta modelo basada solo en el material.",
+  appeal:
+    "Revisa de forma imparcial una objeción contra la nota de una pregunta. Contrasta el enunciado, la respuesta del estudiante, la respuesta esperada, la justificación original, la opinión del estudiante y las fuentes. Mantén la nota si la objeción no cambia la valoración; recomienda aumentarla solo cuando exista una razón académica concreta. Nunca reduzcas la nota durante una reclamación.",
   review:
     "Contrasta de forma neutral la objeción del estudiante con la explicación original y las fuentes. Decide si el estudiante tiene razón, si la explicación está respaldada o si la evidencia recuperada es insuficiente. Corrige la explicación cuando corresponda.",
 };
@@ -66,6 +68,7 @@ function buildQuery(mode: StudyMode, prompt: string) {
     solve: "pregunta respuesta correcta justificación",
     exam: "conceptos objetivos criterios procedimientos evaluación",
     grade: "criterios respuesta correcta explicación evaluación",
+    appeal: "revisión calificación respuesta estudiante evidencia criterios",
     review:
       "verificar afirmación evidencia contraste definición explicación objeción",
   };
@@ -626,6 +629,30 @@ ${modelContext}`;
       },
     };
 
+    const appealSchema = {
+      type: "json_schema",
+      name: "exam_appeal_review",
+      strict: true,
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "decision",
+          "previousScore",
+          "recommendedScore",
+          "responseToStudent",
+          "analysis",
+        ],
+        properties: {
+          decision: { type: "string", enum: ["uphold", "increase"] },
+          previousScore: { type: "number" },
+          recommendedScore: { type: "number" },
+          responseToStudent: { type: "string" },
+          analysis: { type: "string" },
+        },
+      },
+    };
+
     const gradingSchema = {
       type: "json_schema",
       name: "exam_grading",
@@ -681,6 +708,8 @@ ${modelContext}`;
             ? explanationSchema(false)
           : body.mode === "review"
             ? reviewSchema
+            : body.mode === "appeal"
+              ? appealSchema
             : body.mode === "grade"
               ? gradingSchema
             : undefined;
@@ -726,6 +755,11 @@ ${modelContext}`;
     if (body.mode === "review") {
       const review = JSON.parse(answer);
       return NextResponse.json({ review, sources, grounded: true });
+    }
+
+    if (body.mode === "appeal") {
+      const appeal = JSON.parse(answer);
+      return NextResponse.json({ appeal, sources, grounded: true });
     }
 
     if (body.mode === "grade") {
