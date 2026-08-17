@@ -171,7 +171,7 @@ export async function callAgentRouter(options: {
     Authorization: `Bearer ${process.env.AGENTROUTER_API_KEY}`,
     "Content-Type": "application/json",
     "User-Agent": process.env.AGENTROUTER_USER_AGENT ?? "codex_cli_rs/0.114.0",
-    ...(baseHost.endsWith("ngrok-free.app")
+    ...(baseHost.endsWith("ngrok-free.app") || baseHost.endsWith("ngrok-free.dev")
       ? { "ngrok-skip-browser-warning": "temaria-server" }
       : {}),
   };

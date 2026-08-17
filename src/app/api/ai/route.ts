@@ -105,6 +105,16 @@ function normalizeTextAnswer(answer: string): string {
       const value = parsed[key];
       if (typeof value === "string" && value.trim()) return formatMarkdown(value);
     }
+    const structuredText = [
+      parsed.explanation,
+      parsed.simpleExplanation,
+      parsed.detailedExplanation,
+      parsed.analysis,
+      parsed.correctedExplanation,
+    ]
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .join("\n\n");
+    if (structuredText) return formatMarkdown(structuredText);
     for (const key of ["data", "result"]) {
       if (parsed[key] && typeof parsed[key] === "object") {
         const nested: string = normalizeTextAnswer(JSON.stringify(parsed[key]));
