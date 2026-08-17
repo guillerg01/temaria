@@ -2,8 +2,17 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
 
+# Render requires modern HTTPS. Windows PowerShell may otherwise negotiate an
+# obsolete protocol and fail with "Could not create SSL/TLS secure channel".
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+} catch {
+  throw "No se pudo activar TLS 1.2 en esta version de Windows PowerShell. Actualiza PowerShell o Windows y vuelve a ejecutar el lanzador."
+}
+
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $GatewayScriptPath = Join-Path $PSScriptRoot "agentrouter-local-gateway.mjs"
+$BootstrapPath = Join-Path $ProjectRoot "bootstrap.json"
 if (-not (Test-Path $GatewayScriptPath)) {
   $GatewayScriptPath = Join-Path $ProjectRoot "scripts\agentrouter-local-gateway.mjs"
 }
@@ -69,7 +78,19 @@ function Save-Config($Config) {
   try { icacls.exe $ConfigPath /inheritance:r /grant:r "${identity}:(R,W)" | Out-Null } catch { }
 }
 
-if (Test-Path $ConfigPath) {
+if (-not (Test-Path $ConfigPath) -and (Test-Path $BootstrapPath)) {
+  $bootstrap = Get-Content -Raw $BootstrapPath | ConvertFrom-Json
+  $config = [pscustomobject]@{
+    renderServiceId = [string]$bootstrap.renderServiceId
+    renderApiKey = Protect-Secret ([string]$bootstrap.renderApiKey)
+    agentRouterApiKey = Protect-Secret ([string]$bootstrap.agentRouterApiKey)
+    gatewaySecret = Protect-Secret ([string]$bootstrap.gatewaySecret)
+    lastNgrokUrl = ""
+  }
+  Save-Config $config
+  Remove-Item -LiteralPath $BootstrapPath -Force -ErrorAction SilentlyContinue
+  Write-Host "Credenciales preconfiguradas importadas y cifradas para este usuario." -ForegroundColor Green
+} elseif (Test-Path $ConfigPath) {
   $config = Get-Content -Raw $ConfigPath | ConvertFrom-Json
 } else {
   $config = [pscustomobject]@{
